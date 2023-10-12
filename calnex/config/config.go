@@ -18,6 +18,7 @@ package config
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/facebook/time/calnex/api"
 	"github.com/go-ini/ini"
@@ -43,6 +44,11 @@ type MeasureConfig struct {
 type config struct {
 	changed bool
 }
+
+// Configuration constant for behaviors
+const (
+	MAXIMUM_START_WAIT_TIME = 5 * 60 // Time in seconds
+)
 
 // chSet modifies a config on several channels
 func (c *config) chSet(s *ini.Section, start, end api.Channel, keyf, value string) {
@@ -82,6 +88,9 @@ func (c *config) measureConfig(s *ini.Section, mc map[api.Channel]MeasureConfig)
 			c.set(s, fmt.Sprintf("%s\\ptp_synce\\ntp\\server_ip", ch.CalnexAPI()), m.Target)
 			c.set(s, fmt.Sprintf("%s\\ptp_synce\\ntp\\server_ip_ipv6", ch.CalnexAPI()), m.Target)
 
+			// Enable virtual channel measurements for this channel
+			c.set(s, "ch6\\virtual_channels_enabled", api.ON)
+
 			// show raw metrics
 			c.set(s, fmt.Sprintf("%s\\ptp_synce\\ntp\\normalize_delays", ch.CalnexAPI()), api.OFF)
 			// use ipv6
@@ -94,6 +103,9 @@ func (c *config) measureConfig(s *ini.Section, mc map[api.Channel]MeasureConfig)
 			c.set(s, fmt.Sprintf("%s\\protocol_enabled", ch.CalnexAPI()), api.ON)
 			// Set Virtual Port to use Physical channel 1
 			c.set(s, fmt.Sprintf("%s\\ptp_synce\\physical_packet_channel", ch.CalnexAPI()), api.CHANNEL1)
+
+			// Enable virtual channel measurements for this channel
+			c.set(s, "ch6\\virtual_enabled", api.YES)
 
 			// Set target we measure
 			c.set(s, fmt.Sprintf("%s\\ptp_synce\\ptp\\master_ip", ch.CalnexAPI()), m.Target)
@@ -136,6 +148,10 @@ func (c *config) measureConfig(s *ini.Section, mc map[api.Channel]MeasureConfig)
 			}
 		}
 	}
+
+	// Always enabled packet channel 1
+	c.set(s, "ch6\\used", api.YES)
+
 }
 
 func (c *config) baseConfig(measure *ini.Section, gnss *ini.Section, antennaDelayNS int) {
@@ -171,7 +187,9 @@ func (c *config) baseConfig(measure *ini.Section, gnss *ini.Section, antennaDela
 	c.chSet(measure, api.ChannelONE, api.ChannelONE, "%s\\ptp_synce\\ethernet\\qsfp_fec", api.RSFEC)
 
 	// Disable 2nd Physical channel
-	c.chSet(measure, api.ChannelONE, api.ChannelTWO, "%s\\used", api.NO)
+	c.chSet(measure, api.ChannelTWO, api.ChannelTWO, "%s\\used", api.NO)
+
+	// Disable packet measurement on the two physical channel measurements
 	c.chSet(measure, api.ChannelONE, api.ChannelTWO, "%s\\protocol_enabled", api.OFF)
 }
 
@@ -224,8 +242,29 @@ func Config(target string, insecureTLS bool, cc *CalnexConfig, apply bool) error
 	}
 
 	if c.changed || !status.MeasurementActive {
-		log.Infof("starting measurement")
-		// start measurement
+		maximumWaitTime := MAXIMUM_START_WAIT_TIME
+		waitTime := 10 // wait time between each status check in seconds
+
+		for maximumWaitTime > 0 {
+			// check measurement status
+			measurementStatus, err := api.FetchStatus()
+			if err != nil {
+				log.Infof("error reading device status %s", err.Error())
+			} else {
+				if measurementStatus.MeasurementReady {
+					log.Infof("now ready to measure")
+					break
+				}
+			}
+
+			maximumWaitTime -= waitTime
+
+			time.Sleep(10 * time.Second)
+		}
+
+		log.Infof("start measurement")
+
+		// In any case whether it is ready or not we try a start which has an inbuilt timeout
 		if err = api.StartMeasure(); err != nil {
 			return err
 		}

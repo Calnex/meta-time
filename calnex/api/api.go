@@ -44,6 +44,7 @@ type Status struct {
 	ReferenceReady    bool
 	ModulesReady      bool
 	MeasurementActive bool
+	MeasurementReady  bool
 }
 
 // InstrumentStatus is a struct representing Calnex instrument status JSON response
@@ -445,7 +446,7 @@ const (
 	measureURL = "https://%s/api/get/measure/%s"
 	dataURL    = "https://%s/api/getdata?channel=%s&datatype=%s&reset=%t"
 
-	startMeasure = "https://%s/api/startmeasurement"
+	startMeasure = "https://%s/api/startmeasurement?timeout=60"
 	stopMeasure  = "https://%s/api/stopmeasurement"
 
 	getSettingsURL      = "https://%s/api/getsettings"
