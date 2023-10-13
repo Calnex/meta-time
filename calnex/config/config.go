@@ -32,6 +32,7 @@ type Calnexes map[string]*CalnexConfig
 type CalnexConfig struct {
 	Measure        map[api.Channel]MeasureConfig `json:"measure"`
 	AntennaDelayNS int                           `json:"antennaDelayNS"`
+	DeviceName     string                        `json:"deviceName"`
 }
 
 // MeasureConfig is a Calnex channel config
@@ -154,9 +155,12 @@ func (c *config) measureConfig(s *ini.Section, mc map[api.Channel]MeasureConfig)
 
 }
 
-func (c *config) baseConfig(measure *ini.Section, gnss *ini.Section, antennaDelayNS int) {
+func (c *config) baseConfig(measure *ini.Section, gnss *ini.Section, antennaDelayNS int, deviceName string) {
 	// gnss antenna compensation
 	c.set(gnss, "antenna_delay", fmt.Sprintf("%d ns", antennaDelayNS))
+
+	// gnss antenna compensation
+	c.set(measure, "device_name", deviceName)
 
 	// continuous measurement
 	c.set(measure, "continuous", api.ON)
@@ -207,7 +211,7 @@ func Config(target string, insecureTLS bool, cc *CalnexConfig, apply bool) error
 	g := f.Section("gnss")
 
 	// set base config
-	c.baseConfig(m, g, cc.AntennaDelayNS)
+	c.baseConfig(m, g, cc.AntennaDelayNS, cc.DeviceName)
 
 	// set measure config
 	c.measureConfig(m, cc.Measure)
