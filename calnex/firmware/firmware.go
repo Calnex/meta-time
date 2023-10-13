@@ -39,7 +39,10 @@ func Firmware(target string, insecureTLS bool, fw FW, apply bool) error {
 	if err != nil {
 		return err
 	}
-	calnexVersion, err := version.NewVersion(strings.ToLower(cv.Firmware))
+	//remove major version 2.17.0 -> 17.0 as this is hardware revision related
+	//calnexVersion, err := version.NewVersion(strings.ToLower(cv.Firmware))
+	calnexVersion, err := version.NewVersion(strings.ToLower(strings.SplitN(cv.Firmware, ".", 2)[1]))
+
 	if err != nil {
 		return err
 	}

@@ -30,10 +30,34 @@ type OSSFW struct {
 
 // Version downloads latest firmware version
 // sentinel_fw_v2.13.1.0.5583D-20210924.tar
+// sentinel_fw_R18.1.0.tar
+// calnex_combined_fw_R18.1.0.tar
 func (f *OSSFW) Version() (*version.Version, error) {
+	var err error
+	var vs string
+	var v *version.Version
+
 	basename := filepath.Base(f.Filepath)
-	vs := strings.ReplaceAll(strings.TrimSuffix(basename, filepath.Ext(basename)), "sentinel_fw_v", "")
-	v, err := version.NewVersion(strings.ToLower(vs))
+
+	if strings.HasPrefix(basename, "sentinel") {
+		vs = strings.ReplaceAll(strings.TrimSuffix(basename, filepath.Ext(basename)), "sentinel_fw_", "")
+	} else if strings.HasPrefix(basename, "sentry") {
+		vs = strings.ReplaceAll(strings.TrimSuffix(basename, filepath.Ext(basename)), "sentry_fw_", "")
+	} else if strings.HasPrefix(basename, "calnex") {
+		vs = strings.ReplaceAll(strings.TrimSuffix(basename, filepath.Ext(basename)), "calnex_combined_fw_", "")
+	} else {
+		vs = "v2.13.1.0.5583d-20210924"
+		//fw := OSSFW{
+		//	Filepath: expectedFilePath,
+		//}
+		//v, err := fw.Version()
+	}
+
+	if strings.HasPrefix(vs, "v") {
+		v, err = version.NewVersion(strings.SplitN(strings.ToLower(vs), ".", 2)[1])
+	} else if strings.HasPrefix(vs, "R") {
+		v, err = version.NewVersion(strings.TrimPrefix(strings.ToLower(vs), "r"))
+	}
 	return v, err
 }
 
