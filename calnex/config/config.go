@@ -33,6 +33,7 @@ type CalnexConfig struct {
 	Measure        map[api.Channel]MeasureConfig `json:"measure"`
 	AntennaDelayNS int                           `json:"antennaDelayNS"`
 	DeviceName     string                        `json:"deviceName"`
+	RSFEC          string                        `json:"RSFEC"`
 }
 
 // MeasureConfig is a Calnex channel config
@@ -155,11 +156,11 @@ func (c *config) measureConfig(s *ini.Section, mc map[api.Channel]MeasureConfig)
 
 }
 
-func (c *config) baseConfig(measure *ini.Section, gnss *ini.Section, antennaDelayNS int, deviceName string) {
+func (c *config) baseConfig(measure *ini.Section, gnss *ini.Section, antennaDelayNS int, deviceName string, RSFEC string) {
 	// gnss antenna compensation
 	c.set(gnss, "antenna_delay", fmt.Sprintf("%d ns", antennaDelayNS))
 
-	// gnss antenna compensation
+	// device name to display on UI
 	c.set(measure, "device_name", deviceName)
 
 	// continuous measurement
@@ -188,8 +189,12 @@ func (c *config) baseConfig(measure *ini.Section, gnss *ini.Section, antennaDela
 	c.chSet(measure, api.ChannelONE, api.ChannelTWO, "%s\\ptp_synce\\ethernet\\dhcp_v4", api.DISABLED)
 
 	// enable QSFP FEC for 100G links (first channel only)
-	c.chSet(measure, api.ChannelONE, api.ChannelONE, "%s\\ptp_synce\\ethernet\\qsfp_fec", api.RSFEC)
-
+	switch RSFEC {
+	case "None", "RS-FEC":
+		c.chSet(measure, api.ChannelONE, api.ChannelONE, "%s\\ptp_synce\\ethernet\\qsfp_fec", RSFEC)
+	default:
+		c.chSet(measure, api.ChannelONE, api.ChannelONE, "%s\\ptp_synce\\ethernet\\qsfp_fec", api.RSFEC)
+	}
 	// Disable 2nd Physical channel
 	c.chSet(measure, api.ChannelTWO, api.ChannelTWO, "%s\\used", api.NO)
 
@@ -211,7 +216,7 @@ func Config(target string, insecureTLS bool, cc *CalnexConfig, apply bool) error
 	g := f.Section("gnss")
 
 	// set base config
-	c.baseConfig(m, g, cc.AntennaDelayNS, cc.DeviceName)
+	c.baseConfig(m, g, cc.AntennaDelayNS, cc.DeviceName, cc.RSFEC)
 
 	// set measure config
 	c.measureConfig(m, cc.Measure)
