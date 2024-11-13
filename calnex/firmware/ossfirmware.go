@@ -31,12 +31,26 @@ type OSSFW struct {
 
 // NewOSSFW returns initialized version of OSSFW
 func NewOSSFW(source string) (*OSSFW, error) {
+	var err error
+	var vs string
+	var v *version.Version
+	
 	fw := &OSSFW{
 		filepath: source,
 	}
-	basename := filepath.Base(fw.filepath)
-	vs := strings.ReplaceAll(strings.TrimSuffix(basename, filepath.Ext(basename)), "sentinel_fw_v", "")
-	v, err := version.NewVersion(strings.ToLower(vs))
+	basename := filepath.Base(fw.filepath)	
+	if strings.HasPrefix(basename, "sentinel"){
+		vs=strings.ReplaceAll(strings.TrimSuffix(basename, filepath.Ext(basename)), "sentinel_fw_", "")
+	} else if strings.HasPrefix(basename, "sentry"){
+		vs=strings.ReplaceAll(strings.TrimSuffix(basename, filepath.Ext(basename)), "sentry_fw_", "")
+	} else if strings.HasPrefix(basename, "calnex"){
+		vs=strings.ReplaceAll(strings.TrimSuffix(basename, filepath.Ext(basename)), "calnex_combined_fw_", "")
+	}
+	if strings.HasPrefix(vs, "v") {
+		v,err = version.NewVersion(strings.SplitN(strings.ToLower(vs), ".", 2)[1])
+	} else if strings.HasPrefix(vs, "R") {
+		v,err = version.NewVersion(strings.TrimPrefix(strings.ToLower(vs), "r"))
+	}
 	fw.version = v
 	return fw, err
 }
