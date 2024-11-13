@@ -39,6 +39,9 @@ func NewOSSFW(source string) (*OSSFW, error) {
 		filepath: source,
 	}
 	basename := filepath.Base(fw.filepath)	
+	// Extract version from filename
+	// sentinel_fw_v2.13.1.0.5583D-20210924.tar
+	// calnex_combined_fw_R21.0.0.9705-20241111.tar
 	if strings.HasPrefix(basename, "sentinel"){
 		vs=strings.ReplaceAll(strings.TrimSuffix(basename, filepath.Ext(basename)), "sentinel_fw_", "")
 	} else if strings.HasPrefix(basename, "sentry"){
