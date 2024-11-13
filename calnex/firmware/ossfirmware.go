@@ -34,25 +34,25 @@ func NewOSSFW(source string) (*OSSFW, error) {
 	var err error
 	var vs string
 	var v *version.Version
-	
+
 	fw := &OSSFW{
 		filepath: source,
 	}
-	basename := filepath.Base(fw.filepath)	
+	basename := filepath.Base(fw.filepath)
 	// Extract version from filename
 	// sentinel_fw_v2.13.1.0.5583D-20210924.tar
 	// calnex_combined_fw_R21.0.0.9705-20241111.tar
-	if strings.HasPrefix(basename, "sentinel"){
-		vs=strings.ReplaceAll(strings.TrimSuffix(basename, filepath.Ext(basename)), "sentinel_fw_", "")
-	} else if strings.HasPrefix(basename, "sentry"){
-		vs=strings.ReplaceAll(strings.TrimSuffix(basename, filepath.Ext(basename)), "sentry_fw_", "")
-	} else if strings.HasPrefix(basename, "calnex"){
-		vs=strings.ReplaceAll(strings.TrimSuffix(basename, filepath.Ext(basename)), "calnex_combined_fw_", "")
+	if strings.HasPrefix(basename, "sentinel") {
+		vs = strings.ReplaceAll(strings.TrimSuffix(basename, filepath.Ext(basename)), "sentinel_fw_", "")
+	} else if strings.HasPrefix(basename, "sentry") {
+		vs = strings.ReplaceAll(strings.TrimSuffix(basename, filepath.Ext(basename)), "sentry_fw_", "")
+	} else if strings.HasPrefix(basename, "calnex") {
+		vs = strings.ReplaceAll(strings.TrimSuffix(basename, filepath.Ext(basename)), "calnex_combined_fw_", "")
 	}
 	if strings.HasPrefix(vs, "v") {
-		v,err = version.NewVersion(strings.SplitN(strings.ToLower(vs), ".", 2)[1])
+		v, err = version.NewVersion(strings.SplitN(strings.ToLower(vs), ".", 2)[1])
 	} else if strings.HasPrefix(vs, "R") {
-		v,err = version.NewVersion(strings.TrimPrefix(strings.ToLower(vs), "r"))
+		v, err = version.NewVersion(strings.TrimPrefix(strings.ToLower(vs), "r"))
 	}
 	fw.version = v
 	return fw, err
