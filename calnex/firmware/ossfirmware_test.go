@@ -23,9 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestOSSFW(t *testing.T) {
-	expectedFilePath := "/tmp/sentinel_fw_v2.13.1.0.5583D-20210924.tar"
-	expectedVersion, _ := version.NewVersion("2.13.1.0.5583d-20210924")
+func checkOSSFW(t *testing.T, expectedFilePath string, expectedVersion *version.Version) {
 	fw, err := NewOSSFW(expectedFilePath)
 	require.NoError(t, err)
 
@@ -36,4 +34,37 @@ func TestOSSFW(t *testing.T) {
 	v := fw.Version()
 	require.NoError(t, err)
 	require.Equal(t, expectedVersion, v)
+}
+
+func TestOSSFW(t *testing.T) {
+	//all files are expected to produce the same version output
+	//development/beta build versions (D after build number)
+	expectedVersiondev, _ := version.NewVersion("13.1.0.5583d-20210924")
+
+	// Test case for sentinel_fw
+	expectedFilePathSentineldev := "/tmp/sentinel_fw_v2.13.1.0.5583D-20210924.tar"
+	checkOSSFW(t, expectedFilePathSentineldev, expectedVersiondev)
+
+	// Test case for sentry
+	expectedFilePathSentrydev := "/tmp/sentry_fw_v2.13.1.0.5583D-20210924.tar"
+	checkOSSFW(t, expectedFilePathSentrydev, expectedVersiondev)
+
+	// Test case for calnex_combined
+	expectedFilePathCalnexdev := "/tmp/calnex_combined_fw_R13.1.0.5583D-20210924.tar"
+	checkOSSFW(t, expectedFilePathCalnexdev, expectedVersiondev)
+
+	//full release versions (no D)
+	expectedVersion, _ := version.NewVersion("13.1.0.5583-20210924")
+
+	// Test case for sentinel_fw
+	expectedFilePathSentinel := "/tmp/sentinel_fw_v2.13.1.0.5583-20210924.tar"
+	checkOSSFW(t, expectedFilePathSentinel, expectedVersion)
+
+	// Test case for sentry
+	expectedFilePathSentry := "/tmp/sentry_fw_v2.13.1.0.5583-20210924.tar"
+	checkOSSFW(t, expectedFilePathSentry, expectedVersion)
+
+	// Test case for calnex_combined
+	expectedFilePathCalnex := "/tmp/calnex_combined_fw_R13.1.0.5583-20210924.tar"
+	checkOSSFW(t, expectedFilePathCalnex, expectedVersion)
 }

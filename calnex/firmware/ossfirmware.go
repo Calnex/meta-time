@@ -17,7 +17,9 @@ limitations under the License.
 package firmware
 
 import (
+	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	version "github.com/hashicorp/go-version"
@@ -31,11 +33,25 @@ type OSSFW struct {
 
 // NewOSSFW returns initialized version of OSSFW
 func NewOSSFW(source string) (*OSSFW, error) {
+	var vs string
+
 	fw := &OSSFW{
 		filepath: source,
 	}
+
 	basename := filepath.Base(fw.filepath)
-	vs := strings.ReplaceAll(strings.TrimSuffix(basename, filepath.Ext(basename)), "sentinel_fw_v", "")
+	// Extract version from filename
+	// sentinel_fw_v2.13.1.0.5583D-20210924.tar -> 13.1.0.5583
+	// calnex_combined_fw_R21.0.0.9705-20241111.tar -> 21.0.0.9705
+
+	re := regexp.MustCompile(`(sentry_fw_|sentinel_fw_|calnex_combined_fw_)(v[0-9]\.|R)(.*).tar`)
+
+	matches := re.FindStringSubmatch(basename)
+	if matches != nil {
+		vs = matches[3]
+	} else {
+		return nil, fmt.Errorf("invalid filename, expected prefix sentinel_fw_, sentry_fw_, or calnex_combined_fw_ followed by 'v2.' or 'R': %s", basename)
+	}
 	v, err := version.NewVersion(strings.ToLower(vs))
 	fw.version = v
 	return fw, err
