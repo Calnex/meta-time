@@ -17,9 +17,9 @@ limitations under the License.
 package firmware
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
-	"fmt"
 
 	version "github.com/hashicorp/go-version"
 )
