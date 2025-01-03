@@ -56,11 +56,11 @@ func TestChannel(t *testing.T) {
 	for _, channelS := range wrongChannelNames {
 		c, err := ChannelFromString(channelS)
 		require.Nil(t, c)
-		require.ErrorIs(t, errBadChannel, err)
+		require.ErrorIs(t, ErrBadChannel, err)
 
 		c = new(Channel)
 		err = c.UnmarshalText([]byte(channelS))
-		require.ErrorIs(t, errBadChannel, err)
+		require.ErrorIs(t, ErrBadChannel, err)
 	}
 }
 
@@ -834,4 +834,25 @@ func TestPowerSupplyStatusSentinel(t *testing.T) {
 	g, err := calnexAPI.PowerSupplyStatus()
 	require.NoError(t, err)
 	require.Equal(t, expected, g)
+}
+
+func TestFetchUptime(t *testing.T) {
+	sampleResp := "{\"uptime\": 42}"
+	expected := &Uptime{
+		Uptime: 42,
+	}
+
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter,
+		r *http.Request) {
+		fmt.Fprintln(w, sampleResp)
+	}))
+	defer ts.Close()
+
+	parsed, _ := url.Parse(ts.URL)
+	calnexAPI := NewAPI(parsed.Host, true, time.Second)
+	calnexAPI.Client = ts.Client()
+
+	f, err := calnexAPI.FetchUptime()
+	require.NoError(t, err)
+	require.Equal(t, expected, f)
 }

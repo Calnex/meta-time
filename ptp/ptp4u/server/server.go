@@ -117,7 +117,7 @@ func (s *Server) Start() error {
 			}
 
 			if shouldDrain {
-				log.Warningf("shifting traffic")
+				log.Warning("shifting traffic")
 				s.Drain()
 				s.Stats.SetDrain(1)
 			} else {
@@ -241,11 +241,21 @@ func readPacketBuf(connFd int, buf []byte) (int, unix.Sockaddr, error) {
 	return n, saddr, err
 }
 
+func updateSockaddrWithPort(sa unix.Sockaddr, port int) {
+	switch sa := sa.(type) {
+	case *unix.SockaddrInet4:
+		sa.Port = port
+	case *unix.SockaddrInet6:
+		sa.Port = port
+	}
+}
+
 // handleEventMessage is a handler which gets called every time Event Message arrives
 func (s *Server) handleEventMessages(eventConn *net.UDPConn) {
 	buf := make([]byte, timestamp.PayloadSizeBytes)
 	oob := make([]byte, timestamp.ControlSizeBytes)
 	dReq := &ptp.SyncDelayReq{}
+	zerotlv := []ptp.TLV{}
 	// Initialize the new random. We will re-seed it every time in findWorker
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	var msgType ptp.MessageType
@@ -253,6 +263,7 @@ func (s *Server) handleEventMessages(eventConn *net.UDPConn) {
 	var sc *SubscriptionClient
 	var gclisa unix.Sockaddr
 	var expire time.Time
+	var workerOffset int64
 
 	for {
 		bbuf, eclisa, rxTS, err := timestamp.ReadPacketWithRXTimestampBuf(s.eFd, buf, oob)
@@ -279,24 +290,46 @@ func (s *Server) handleEventMessages(eventConn *net.UDPConn) {
 
 		switch msgType {
 		case ptp.MessageDelayReq:
+			dReq.TLVs = zerotlv
 			if err := ptp.FromBytes(buf[:bbuf], dReq); err != nil {
 				log.Errorf("Failed to read the ptp SyncDelayReq: %v", err)
 				continue
 			}
-			log.Debugf("Got delay request")
-			worker = s.findWorker(dReq.Header.SourcePortIdentity, r)
+			log.Debug("Got delay request")
+			// CSPTP AlternateResponsePortTLV POC
+			for _, tlv := range dReq.TLVs {
+				switch v := tlv.(type) {
+				case *ptp.AlternateResponsePortTLV:
+					workerOffset = int64(v.Offset)
+				}
+			}
+
+			worker = s.findWorker(dReq.Header.SourcePortIdentity, r, workerOffset)
 			if dReq.FlagField == ptp.FlagProfileSpecific1|ptp.FlagUnicast {
 				expire = time.Now().Add(subscriptionDuration)
 				// SYNC DELAY_REQUEST and ANNOUNCE
 				if sc = worker.FindSubscription(dReq.Header.SourcePortIdentity, ptp.MessageDelayReq); sc == nil {
-					gclisa = timestamp.NewSockaddrWithPort(eclisa, ptp.PortGeneral)
+					// if the port number is > 10, it's a ptping request which expects announce to come to the same ephemeral port
+					if dReq.SourcePortIdentity.PortNumber > 10 {
+						gclisa = eclisa
+					} else {
+						gclisa = timestamp.NewSockaddrWithPort(eclisa, ptp.PortGeneral)
+					}
 					// Create a new subscription
-					sc = NewSubscriptionClient(worker.queue, worker.signalingQueue, timestamp.NewSockaddrWithPort(eclisa, ptp.PortEvent), gclisa, ptp.MessageDelayReq, s.Config, subscriptionDuration, expire)
+					sc = NewSubscriptionClient(worker.queue, worker.signalingQueue, eclisa, gclisa, ptp.MessageDelayReq, s.Config, subscriptionDuration, expire)
 					worker.RegisterSubscription(dReq.Header.SourcePortIdentity, ptp.MessageDelayReq, sc)
 					go sc.Start(s.ctx)
 				} else {
 					// bump the subscription
 					sc.SetExpire(expire)
+					// sptp is stateless, port can change
+					sc.eclisa = eclisa
+					// if the port number is > 10, it's a ptping request which expects announce to come to the same ephemeral port
+					if dReq.SourcePortIdentity.PortNumber > 10 {
+						sc.gclisa = eclisa
+					} else {
+						updateSockaddrWithPort(sc.gclisa, ptp.PortGeneral)
+					}
 				}
 				sc.UpdateSyncDelayReq(rxTS, dReq.SequenceID)
 				sc.UpdateAnnounceDelayReq(dReq.CorrectionField, dReq.SequenceID)
@@ -363,7 +396,7 @@ func (s *Server) handleGeneralMessages(generalConn *net.UDPConn) {
 
 					switch signalingType {
 					case ptp.MessageAnnounce, ptp.MessageSync, ptp.MessageDelayResp:
-						worker = s.findWorker(signaling.SourcePortIdentity, r)
+						worker = s.findWorker(signaling.SourcePortIdentity, r, 0)
 						sc = worker.FindSubscription(signaling.SourcePortIdentity, signalingType)
 						if sc == nil || !sc.Running() {
 							ip := timestamp.SockaddrToIP(gclisa)
@@ -398,7 +431,7 @@ func (s *Server) handleGeneralMessages(generalConn *net.UDPConn) {
 					signalingType = v.MsgTypeAndFlags.MsgType()
 					s.Stats.IncRXSignalingCancel(signalingType)
 					log.Debugf("Got %s cancel request", signalingType)
-					worker = s.findWorker(signaling.SourcePortIdentity, r)
+					worker = s.findWorker(signaling.SourcePortIdentity, r, 0)
 					sc = worker.FindSubscription(signaling.SourcePortIdentity, signalingType)
 					if sc != nil {
 						sc.Stop()
@@ -413,9 +446,9 @@ func (s *Server) handleGeneralMessages(generalConn *net.UDPConn) {
 	}
 }
 
-func (s *Server) findWorker(clientID ptp.PortIdentity, r *rand.Rand) *sendWorker {
+func (s *Server) findWorker(clientID ptp.PortIdentity, r *rand.Rand, offset int64) *sendWorker {
 	// Seeding random with the same value will produce the same number
-	r.Seed(int64(clientID.ClockIdentity) + int64(clientID.PortNumber))
+	r.Seed(int64(clientID.ClockIdentity) + int64(clientID.PortNumber) + offset) //#nosec G115
 	return s.sw[r.Intn(s.Config.SendWorkers)]
 }
 
@@ -450,7 +483,7 @@ func (s *Server) Undrain() {
 
 // handleSighup watches for SIGHUP and reloads the dynamic config
 func (s *Server) handleSighup() {
-	log.Infof("Engaging the SIGHUP monitoring")
+	log.Info("Engaging the SIGHUP monitoring")
 	sigchan := make(chan os.Signal, 10)
 	signal.Notify(sigchan, unix.SIGHUP)
 	for range sigchan {
@@ -470,7 +503,7 @@ func (s *Server) handleSighup() {
 
 // handleSigterm watches for SIGTERM and SIGINT and removes the pid file
 func (s *Server) handleSigterm() {
-	log.Infof("Engaging the SIGTERM/SIGINT monitoring")
+	log.Info("Engaging the SIGTERM/SIGINT monitoring")
 	sigchan := make(chan os.Signal, 1)
 	signal.Notify(sigchan, unix.SIGTERM, unix.SIGINT)
 	<-sigchan

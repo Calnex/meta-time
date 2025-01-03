@@ -39,13 +39,14 @@ import (
 
 const (
 	utcOffsetOriginalS int32  = 10    // UTC-TAI offset was 10s before leap seconds started (1972)
-	leapDurationS      uint64 = 65000 // 18.06 hours
+	leapDurationS      uint64 = 62500 // 17.36 hours https://chrony-project.org/doc/4.6/chrony.conf.html
 	monPrefix          string = "linearizability."
 )
 
 var errNotEnoughData = errors.New("not enough data points")
 var errNoTestResults = errors.New("no test results")
 var errNoPHC = errors.New("phc error")
+var errCorrectness = errors.New("sanity checking data point error")
 
 // defaultTargets is a list of targets if no available
 var defaultTargets = []string{"::1", "::2", "::3"}
@@ -73,7 +74,7 @@ func (d *DataPoint) SanityCheck() error {
 		return fmt.Errorf("master offset is 0")
 	}
 	if d.PathDelayNS == 0 {
-		return fmt.Errorf("path dealy is 0")
+		return fmt.Errorf("path delay is 0")
 	}
 	if d.FreqAdjustmentPPB == 0 {
 		return fmt.Errorf("frequency adjustment is 0")
@@ -298,7 +299,7 @@ func (s *Daemon) calcDriftPPB() (float64, error) {
 func (s *Daemon) calculateSHMData(data *DataPoint, leaps []leapsectz.LeapSecond) (*fbclock.Data, error) {
 	if err := data.SanityCheck(); err != nil {
 		s.stats.UpdateCounterBy("data_sanity_check_error", 1)
-		return nil, fmt.Errorf("sanity checking data point: %w", err)
+		return nil, fmt.Errorf("%w: %w", errCorrectness, err)
 	}
 	s.stats.SetCounter("data_sanity_check_error", 0)
 
@@ -358,7 +359,7 @@ func (s *Daemon) doWork(shm *fbclock.Shm, data *DataPoint) error {
 		timeSinceIngress := phcTime.UnixNano() - it
 		log.Debugf("Time since ingress: %dns", timeSinceIngress)
 	} else {
-		log.Warningf("No data for time since ingress")
+		log.Warning("No data for time since ingress")
 	}
 	// read tzdata for leap seconds
 	leaps, err := leapSeconds()
@@ -512,8 +513,11 @@ func (s *Daemon) Run(ctx context.Context) error {
 		if err := s.doWork(shm, data); err != nil {
 			if errors.Is(err, errNoPHC) {
 				return err
+			} else if errors.Is(err, errCorrectness) {
+				log.Warning(err)
+			} else {
+				log.Error(err)
 			}
-			log.Error(err)
 			s.stats.UpdateCounterBy("processing_error", 1)
 			continue
 		}

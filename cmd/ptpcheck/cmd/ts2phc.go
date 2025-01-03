@@ -83,9 +83,9 @@ func ts2phcRun(srcDevicePath string, dstDeviceName string, interval time.Duratio
 			log.Errorf("Error getting source timestamp: %v", err)
 			continue
 		}
-		log.Debugf("PPS Src Timestamp: %+v\n", srcTimestamp.UnixNano())
+		log.Debugf("PPS Src Timestamp: %+v", srcTimestamp.UnixNano())
 		now := time.Now()
-		log.Debugf("Tick took %vms sys time to call sync\n", now.Sub(lastTick).Milliseconds())
+		log.Debugf("Tick took %vms sys time to call sync", now.Sub(lastTick).Milliseconds())
 		lastTick = now
 		if err := phc.PPSClockSync(pi, srcTimestamp, eventTime, dstDevice); err != nil {
 			log.Errorf("Error syncing PHC: %v", err)
@@ -110,7 +110,7 @@ func getPPSSourceFromPath(srcDevicePath string, pinIndex uint) (*phc.PPSSource, 
 func phcDeviceFromName(dstDeviceName string) (*phc.Device, error) {
 	devicePath, err := phc.IfaceToPHCDevice(dstDeviceName)
 	if err != nil {
-		log.Infof("Provided device name is not an interface, assuming it is a PHC device path")
+		log.Info("Provided device name is not an interface, assuming it is a PHC device path")
 		devicePath = dstDeviceName
 	}
 	// need RW permissions to issue CLOCK_ADJTIME on the device
