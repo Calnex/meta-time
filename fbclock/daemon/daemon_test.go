@@ -55,17 +55,17 @@ func TestDaemonStateLinearizabilityRing(t *testing.T) {
 	s := newDaemonState(3)
 
 	probes := []linearizability.TestResult{
-		linearizability.PTP4lTestResult{
+		linearizability.PTPTestResult{
 			Server:      "server01",
 			TXTimestamp: time.Unix(0, 1647359186979431100),
 			RXTimestamp: time.Unix(0, 1647359186979431635),
 		},
-		linearizability.PTP4lTestResult{
+		linearizability.PTPTestResult{
 			Server:      "server02",
 			TXTimestamp: time.Unix(0, 1647359186979431200),
 			RXTimestamp: time.Unix(0, 1647359186979431735),
 		},
-		linearizability.PTP4lTestResult{
+		linearizability.PTPTestResult{
 			Server:      "server01",
 			TXTimestamp: time.Unix(0, 1647359186979431300),
 			RXTimestamp: time.Unix(0, 1647359186979431835),
@@ -386,7 +386,7 @@ func TestDaemonCalculateSHMData(t *testing.T) {
 	startTime := time.Duration(1647359186979431900)
 	var d *DataPoint
 	adj := 212131.0
-	for i := 0; i < 58; i++ {
+	for i := range 58 {
 		if i%2 == 0 {
 			adj += float64(i)
 		} else {
@@ -524,7 +524,7 @@ func TestDaemonDoWork(t *testing.T) {
 	var d *DataPoint
 
 	// bad data (ptp4l is just starting)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		d = &DataPoint{
 			IngressTimeNS:     0,
 			MasterOffsetNS:    0,
@@ -547,7 +547,7 @@ func TestDaemonDoWork(t *testing.T) {
 	}
 	// good data
 	adj := 212131.0
-	for i := 0; i < 58; i++ {
+	for i := range 58 {
 		if i%2 == 0 {
 			adj += float64(i)
 		} else {
@@ -706,10 +706,10 @@ func TestRunLinearizabilityTestsNoGMs(t *testing.T) {
 func TestNoTestResults(t *testing.T) {
 	targets := []string{"o", "l", "e", "g"}
 	want := map[string]linearizability.TestResult{
-		"o": linearizability.SPTPTestResult{Error: errNoTestResults},
-		"l": linearizability.SPTPTestResult{Error: errNoTestResults},
-		"e": linearizability.SPTPTestResult{Error: errNoTestResults},
-		"g": linearizability.SPTPTestResult{Error: errNoTestResults},
+		"o": linearizability.SPTPHTTPTestResult{Error: errNoTestResults},
+		"l": linearizability.SPTPHTTPTestResult{Error: errNoTestResults},
+		"e": linearizability.SPTPHTTPTestResult{Error: errNoTestResults},
+		"g": linearizability.SPTPHTTPTestResult{Error: errNoTestResults},
 	}
 
 	got := noTestResults(targets)
@@ -724,4 +724,19 @@ func TestNoPHC(t *testing.T) {
 
 	err := s.doWork(&fbclock.Shm{}, &DataPoint{})
 	require.ErrorIs(t, err, errNoPHC)
+}
+
+func TestCoeffV2(t *testing.T) {
+	prevDataV2 := fbclock.DataV2{}
+	curDataV2 := fbclock.DataV2{}
+	c, err := calcCoeffPPB(&prevDataV2, &curDataV2)
+	require.Equal(t, int64(0), c)
+	require.NoError(t, err)
+	prevDataV2.SysclockTimeNS = 1749167822494826022
+	prevDataV2.PHCTimeNS = 1749167859494830869
+	curDataV2.SysclockTimeNS = 1749167822504951677
+	curDataV2.PHCTimeNS = 1749167859504956519
+	c, err = calcCoeffPPB(&prevDataV2, &curDataV2)
+	require.Equal(t, int64(-493), c)
+	require.NoError(t, err)
 }

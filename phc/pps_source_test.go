@@ -28,8 +28,8 @@ import (
 	"github.com/facebook/time/servo"
 
 	"github.com/facebook/time/phc/unix" // a temporary shim for "golang.org/x/sys/unix" until v0.27.0 is cut
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 type Finisher func()
@@ -73,7 +73,7 @@ func TestActivatePPSSource(t *testing.T) {
 	expectedPeroutRequest := &PtpPeroutRequest{
 		Index:        uint32(0),
 		Flags:        uint32(2),
-		StartOrPhase: PtpClockTime{Sec: 2},
+		StartOrPhase: PtpClockTime{Sec: 1075896002},
 		Period:       PtpClockTime{Sec: 1},
 		On:           PtpClockTime{Nsec: 500000000},
 	}
@@ -124,9 +124,9 @@ func TestActivatePPSSourceSetPTPPeroutFailure(t *testing.T) {
 	expectedPeroutRequest := &PtpPeroutRequest{
 		Index:        uint32(0),
 		Flags:        uint32(0x0),
-		StartOrPhase: PtpClockTime{Sec: 2},
+		StartOrPhase: PtpClockTime{Sec: 1075896002},
 		Period:       PtpClockTime{Sec: 1},
-		On:           PtpClockTime{Nsec: 500000000},
+		On:           PtpClockTime{Nsec: 0},
 	}
 
 	// Act

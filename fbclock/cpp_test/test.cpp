@@ -145,6 +145,100 @@ TEST(fbclockTest, test_concurrent) {
   remove(test_shm);
 }
 
+int writer_thread_v2(int sfd_rw, int tries) {
+  int err;
+  fbclock_clockdata_v2 data = {
+      .ingress_time_ns = 1,
+      .error_bound_ns = 2,
+      .holdover_multiplier_ns = 3,
+      .clockId = CLOCK_MONOTONIC_RAW,
+      .phc_time_ns = 1748164346441310791,
+      .sysclock_time_ns = 1748164309441310791,
+  };
+  for (int i = 0; i < tries; i++) {
+    err = fbclock_clockdata_store_data_v2(sfd_rw, &data);
+    if (err != 0) {
+      return err;
+    }
+    data.ingress_time_ns = data.ingress_time_ns + 1000;
+    if (data.ingress_time_ns > 10000) {
+      data.ingress_time_ns = 1;
+    }
+    data.error_bound_ns = data.ingress_time_ns * 2;
+    data.holdover_multiplier_ns = data.ingress_time_ns * 3;
+    data.phc_time_ns += 10000;
+    data.sysclock_time_ns += 10000;
+    usleep(10000); // sleep 10ms - this will be the normal case
+  }
+  return 0;
+}
+
+int reader_thread_v2(fbclock_shmdata_v2* shmp, int tries) {
+  int err;
+  fbclock_clockdata_v2 data;
+  for (int i = 0; i < tries; i++) {
+    err = fbclock_clockdata_load_data_v2(shmp, &data);
+    if (err != 0) {
+      printf("load v2 data failed: %d\n", err);
+      return err;
+    }
+    if (data.ingress_time_ns * 2 != data.error_bound_ns) {
+      printf("ingress_time_ns: %lu\n", data.ingress_time_ns);
+      printf("error_bound_ns: %d\n", data.error_bound_ns);
+      printf("holdover_multiplier_ns: %d\n", data.holdover_multiplier_ns);
+      return -1;
+    }
+    if (data.ingress_time_ns * 3 != data.holdover_multiplier_ns) {
+      printf("ingress_time_ns: %lu\n", data.ingress_time_ns);
+      printf("error_bound_ns: %d\n", data.error_bound_ns);
+      printf("holdover_multiplier_ns: %d\n", data.holdover_multiplier_ns);
+      return -2;
+    }
+    if ((data.phc_time_ns - data.sysclock_time_ns) != 37000000000) {
+      printf("phc_time_ns: %lu\n", data.phc_time_ns);
+      printf("sysclock_time_ns: %lu\n", data.sysclock_time_ns);
+      return -3;
+    }
+  }
+  return 0;
+}
+
+TEST(fbclockTest, test_concurrent_v2) {
+  int err;
+  char* test_shm = std::tmpnam(nullptr);
+
+  // open file, write data into it
+  FILE* f_rw = fopen(test_shm, "wb+");
+  int sfd_rw = fileno(f_rw);
+  ASSERT_NE(sfd_rw, -1);
+
+  err = ftruncate(sfd_rw, FBCLOCK_SHMDATA_V2_SIZE);
+  ASSERT_EQ(err, 0);
+
+  // read data from the file
+  FILE* f_ro = fopen(test_shm, "r");
+  int sfd_ro = fileno(f_ro);
+  ASSERT_NE(sfd_ro, -1);
+
+  fbclock_shmdata_v2* shmp = (fbclock_shmdata_v2*)mmap(
+      nullptr, FBCLOCK_SHMDATA_V2_SIZE, PROT_READ, MAP_SHARED, sfd_ro, 0);
+  ASSERT_NE(shmp, MAP_FAILED);
+
+  int tries = 1000;
+
+  // spawn two functions asynchronously, make sure there is no inconsistent data
+  auto future_writer =
+      std::async(std::launch::async, writer_thread_v2, sfd_rw, tries);
+  auto future_reader =
+      std::async(std::launch::async, reader_thread_v2, shmp, tries * 10);
+  err = future_writer.get();
+  ASSERT_EQ(err, 0);
+  err = future_reader.get();
+  ASSERT_EQ(err, 0);
+  munmap(shmp, FBCLOCK_SHMDATA_V2_SIZE);
+  remove(test_shm);
+}
+
 TEST(fbclockTest, test_window_of_uncertainty) {
   int64_t seconds = 0; // how long ago was the last SYNC
   double error_bound_ns = 172.0;
@@ -194,6 +288,63 @@ TEST(fbclockTest, test_fbclock_calculate_time) {
   ASSERT_EQ(err, 0);
   EXPECT_EQ(truetime.earliest_ns, 1647290691802010729);
   EXPECT_EQ(truetime.latest_ns, 1647290691804195223);
+}
+
+TEST(fbclockTest, test_fbclock_calculate_time_v2) {
+  int err;
+  fbclock_truetime truetime;
+  fbclock_clockdata_v2 state = {
+      .ingress_time_ns = 1647269091803102957,
+      .clockId = CLOCK_MONOTONIC_RAW,
+      // phc time is before ingress time, error
+      .phc_time_ns = 1647269082943150996,
+  };
+  double error_bound = 172.0;
+  double h_value = 50.5;
+
+  struct timespec tp = {};
+  clock_gettime(CLOCK_MONOTONIC_RAW, &tp);
+
+  int64_t sysclock_time_ns = tp.tv_sec * 1000000000 + tp.tv_nsec;
+  state.sysclock_time_ns = sysclock_time_ns;
+
+  err = fbclock_calculate_time_v2(
+      error_bound,
+      h_value,
+      &state,
+      sysclock_time_ns + 1000, // + 1us
+      &truetime,
+      FBCLOCK_TAI);
+  ASSERT_EQ(err, FBCLOCK_E_PHC_IN_THE_PAST);
+
+  // phc time is after ingress time, all good
+  state = {
+      .ingress_time_ns = 1647269082943150996,
+      .clockId = CLOCK_MONOTONIC_RAW,
+      .phc_time_ns = 1647269091803102957,
+      .sysclock_time_ns = sysclock_time_ns,
+      .coef_ppb = 12,
+  };
+  err = fbclock_calculate_time_v2(
+      error_bound,
+      h_value,
+      &state,
+      sysclock_time_ns + 1000,
+      &truetime,
+      FBCLOCK_TAI);
+  ASSERT_EQ(err, 0);
+
+  EXPECT_EQ(truetime.earliest_ns, 1647269091803103338);
+  EXPECT_EQ(truetime.latest_ns, 1647269091803104576);
+
+  // WOU is very big
+  error_bound = 1000.0;
+  sysclock_time_ns += 6 * 3600 * 1000000000ULL; // + 6 hours
+  err = fbclock_calculate_time_v2(
+      error_bound, h_value, &state, sysclock_time_ns, &truetime, FBCLOCK_TAI);
+  ASSERT_EQ(err, 0);
+  EXPECT_EQ(truetime.earliest_ns, 1647290691803360710);
+  EXPECT_EQ(truetime.latest_ns, 1647290691803363604);
 }
 
 TEST(fbclockTest, test_fbclock_apply_smear_after_2017_leap_second) {

@@ -321,16 +321,24 @@ func TestParseDelayResp(t *testing.T) {
 	assert.Equal(t, &want, pp)
 }
 
-func BenchmarkReadSyncDelay(b *testing.B) {
-	raw := []uint8{
-		0x12, 0x02, 0x00, 0x36, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x63, 0xff,
-		0xff, 0x00, 0x09, 0xba, 0x00, 0x01, 0x9e, 0x57,
-		0x05, 0x0f, 0x00, 0x00, 0x45, 0xb1, 0x11, 0x5e,
-		0x04, 0x5d, 0xd2, 0x6e, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+func TestFoundFuzzResults(t *testing.T) {
+	allBytes := [][]byte{
+		[]byte("00\x0000000000000000000000000000000000000000000\x00\x04\x00\x06000000"),
+		[]byte("00\x00A0000000000000000000000000000000000000000\x00\x04\x00\x06000000\x00\x04\x00\x06000000000"),
 	}
+	for _, b := range allBytes {
+		packet, err := DecodePacket(b)
+		require.NoError(t, err)
+		bb, err := Bytes(packet)
+		require.NoError(t, err)
+		// ignore last 2 bytes as they are only for ipv6 checksums
+		l := len(bb)
+		require.Equal(t, b[:l-2], bb[:l-2], "we expect binary form of packet %v %+v to be equal to original", packet.MessageType(), packet)
+	}
+}
+
+func BenchmarkReadSyncDelay(b *testing.B) {
+	raw := []byte{1, 18, 0, 50, 0, 0, 36, 0, 0, 0, 0, 0, 6, 32, 0, 2, 0, 0, 0, 0, 184, 206, 246, 255, 254, 68, 148, 144, 0, 1, 149, 17, 0, 127, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 32, 7, 0, 2, 16, 146, 0, 0}
 	p := &SyncDelayReq{}
 	for n := 0; n < b.N; n++ {
 		_ = p.UnmarshalBinary(raw)

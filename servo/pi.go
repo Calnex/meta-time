@@ -113,13 +113,6 @@ type PiServo struct {
 	cfg *PiServoCfg
 }
 
-func maximum(a int64, b int64) int64 {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 // SetLastFreq function to set last freq
 func (s *PiServo) SetLastFreq(freq float64) {
 	s.lastFreq = freq
@@ -328,7 +321,7 @@ func (f *PiServoFilter) isSpike(offset int64, lastCorrection time.Time) filterSt
 	if offset < 0 {
 		offset *= -1
 	}
-	if offset > maximum(maxOffsetLocked, f.cfg.minOffsetLocked) && f.skippedCount < f.cfg.maxSkipCount {
+	if offset > max(maxOffsetLocked, f.cfg.minOffsetLocked) && f.skippedCount < f.cfg.maxSkipCount {
 		return filterSpike
 	}
 	return filterNoSpike
@@ -412,6 +405,7 @@ func (f *PiServoFilter) Sample(s *PiServoFilterSample) {
 			freqSigmaSq += (v.freq - f.freqMean) * (v.freq - f.freqMean)
 		})
 		f.freqStdev = math.Sqrt(freqSigmaSq / float64(f.offsetSamplesCount))
+		log.Debugf("Filter.Sample: freq stdev %f, meanFreq = %f", f.freqStdev, f.freqMean)
 	}
 }
 

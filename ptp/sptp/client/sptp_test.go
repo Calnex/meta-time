@@ -28,7 +28,7 @@ import (
 	gmstats "github.com/facebook/time/ptp/sptp/stats"
 	"github.com/facebook/time/servo"
 
-	"github.com/golang/mock/gomock"
+	"go.uber.org/mock/gomock"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
@@ -59,7 +59,7 @@ func TestProcessResultsNoResults(t *testing.T) {
 	mockClock.EXPECT().AdjFreqPPB(gomock.Any())
 	mockStatsServer.EXPECT().SetGmsTotal(0)
 	mockStatsServer.EXPECT().SetGmsAvailable(0)
-	p.processResults(results)
+	_ = p.processResults(results)
 
 	require.Equal(t, netip.Addr{}, p.bestGM)
 }
@@ -72,6 +72,7 @@ func TestProcessResultsEmptyResult(t *testing.T) {
 	mockStatsServer := NewMockStatsServer(ctrl)
 
 	cfg := DefaultConfig()
+	cfg.Iface = "lo"
 	cfg.Servers = map[string]int{
 		"192.168.0.10": 1,
 	}
@@ -94,7 +95,7 @@ func TestProcessResultsEmptyResult(t *testing.T) {
 	mockStatsServer.EXPECT().SetGmsTotal(1)
 	mockStatsServer.EXPECT().SetGmsAvailable(0)
 	mockStatsServer.EXPECT().SetGMStats(gomock.Any())
-	p.processResults(results)
+	_ = p.processResults(results)
 	require.Equal(t, netip.Addr{}, p.bestGM)
 }
 
@@ -120,6 +121,7 @@ func TestProcessResultsSingle(t *testing.T) {
 	mockStatsServer.EXPECT().SetServoState(gomock.Any()).MinTimes(1)
 
 	cfg := DefaultConfig()
+	cfg.Iface = "lo"
 	cfg.Servers = map[string]int{
 		"192.168.0.10": 1,
 	}
@@ -145,7 +147,7 @@ func TestProcessResultsSingle(t *testing.T) {
 	err = p.initClients()
 	require.NoError(t, err)
 	// we step here
-	p.processResults(results)
+	_ = p.processResults(results)
 	require.Equal(t, netip.MustParseAddr("192.168.0.10"), p.bestGM)
 
 	// we have to wait a second to avoid "samples are too fast" error
@@ -156,7 +158,7 @@ func TestProcessResultsSingle(t *testing.T) {
 	mockStatsServer.EXPECT().SetGmsAvailable(100)
 	mockStatsServer.EXPECT().SetTickDuration(gomock.Any())
 	mockStatsServer.EXPECT().SetGMStats(gomock.Any())
-	p.processResults(results)
+	_ = p.processResults(results)
 	require.Equal(t, netip.MustParseAddr("192.168.0.10"), p.bestGM)
 }
 
@@ -181,6 +183,7 @@ func TestProcessResultsFastSamples(t *testing.T) {
 	mockStatsServer.EXPECT().SetServoState(gomock.Any()).MinTimes(1)
 
 	cfg := DefaultConfig()
+	cfg.Iface = "lo"
 	cfg.Servers = map[string]int{
 		"192.168.0.10": 1,
 	}
@@ -206,7 +209,7 @@ func TestProcessResultsFastSamples(t *testing.T) {
 	err = p.initClients()
 	require.NoError(t, err)
 	// we step here
-	p.processResults(results)
+	_ = p.processResults(results)
 	require.Equal(t, netip.MustParseAddr("192.168.0.10"), p.bestGM)
 
 	// we stick to holdover mode and mean freq
@@ -214,7 +217,7 @@ func TestProcessResultsFastSamples(t *testing.T) {
 	mockStatsServer.EXPECT().SetGmsAvailable(100)
 	mockStatsServer.EXPECT().SetTickDuration(gomock.Any())
 	mockStatsServer.EXPECT().SetGMStats(gomock.Any())
-	p.processResults(results)
+	_ = p.processResults(results)
 	require.Equal(t, netip.MustParseAddr("192.168.0.10"), p.bestGM)
 }
 
@@ -241,6 +244,7 @@ func TestProcessResultsMulti(t *testing.T) {
 	mockStatsServer.EXPECT().SetServoState(gomock.Any()).MinTimes(1)
 
 	cfg := DefaultConfig()
+	cfg.Iface = "lo"
 	cfg.Servers = map[string]int{
 		"192.168.0.10": 1,
 		"192.168.0.11": 1,
@@ -278,7 +282,7 @@ func TestProcessResultsMulti(t *testing.T) {
 		},
 	}
 	// we step here
-	p.processResults(results)
+	_ = p.processResults(results)
 	require.Equal(t, netip.MustParseAddr("192.168.0.10"), p.bestGM)
 
 	// we have to wait a second to avoid "samples are too fast" error
@@ -300,7 +304,7 @@ func TestProcessResultsMulti(t *testing.T) {
 	mockStatsServer.EXPECT().SetTickDuration(gomock.Any())
 	mockStatsServer.EXPECT().SetGMStats(gomock.Any())
 	mockStatsServer.EXPECT().SetGMStats(gomock.Any())
-	p.processResults(results)
+	_ = p.processResults(results)
 	require.Equal(t, netip.MustParseAddr("192.168.0.11"), p.bestGM)
 }
 
@@ -319,6 +323,7 @@ func TestProcessResultsFilteredDelay(t *testing.T) {
 	mockStatsServer.EXPECT().IncFiltered()
 
 	cfg := DefaultConfig()
+	cfg.Iface = "lo"
 	cfg.Servers = map[string]int{
 		"192.168.0.10": 1,
 	}
@@ -341,7 +346,7 @@ func TestProcessResultsFilteredDelay(t *testing.T) {
 		},
 	}
 	// we step here
-	p.processResults(results)
+	_ = p.processResults(results)
 	require.Equal(t, netip.Addr{}, p.bestGM)
 }
 
@@ -369,6 +374,7 @@ func TestRunInternalAllDead(t *testing.T) {
 		pi:    mockServo,
 		stats: mockStatsServer,
 		cfg: &Config{
+			Iface:    "lo",
 			Interval: time.Second,
 			Servers: map[string]int{
 				"192.168.0.10": 1,
@@ -407,6 +413,7 @@ func TestRunFiltered(t *testing.T) {
 	mockStatsServer.EXPECT().SetServoState(gomock.Any()).MinTimes(1)
 
 	cfg := DefaultConfig()
+	cfg.Iface = "lo"
 	cfg.Servers = map[string]int{
 		"192.168.0.10": 1,
 	}
@@ -432,9 +439,70 @@ func TestRunFiltered(t *testing.T) {
 	err = p.initClients()
 	require.NoError(t, err)
 	// we step here
-	p.processResults(results)
+	_ = p.processResults(results)
 	require.Equal(t, netip.MustParseAddr("192.168.0.10"), p.bestGM)
 	require.Nil(t, nil, results[netip.MustParseAddr("192.168.0.10")])
+}
+
+func TestRunStalled(t *testing.T) {
+	ts, err := time.Parse(time.RFC3339, "2021-05-21T13:32:05+01:00")
+	require.Nil(t, err)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockClock := NewMockClock(ctrl)
+	mockClock.EXPECT().AdjFreqPPB((float64(0))).Times(2)
+	mockClock.EXPECT().Step(time.Duration(200002000))
+	mockServo := NewMockServo(ctrl)
+	mockServo.EXPECT().IsSpike(int64(-200002000)).Return(true)
+	mockServo.EXPECT().MeanFreq().Times(2)
+	mockServo.EXPECT().SetLastFreq(float64(0)).Times(2)
+
+	mockStatsServer := NewMockStatsServer(ctrl)
+	mockStatsServer.EXPECT().SetGmsTotal(0)
+	mockStatsServer.EXPECT().SetGmsAvailable(0)
+	mockStatsServer.EXPECT().SetGmsTotal(1)
+	mockStatsServer.EXPECT().SetGmsAvailable(100)
+	mockStatsServer.EXPECT().SetGMStats(gomock.Any())
+	mockStatsServer.EXPECT().SetServoState(gomock.Any())
+	mockStatsServer.EXPECT().SetTickDuration(gomock.Any()).Times(2)
+
+	cfg := DefaultConfig()
+	cfg.Iface = "lo"
+	cfg.Servers = map[string]int{
+		"192.168.0.10": 1,
+	}
+	p := &SPTP{
+		clock:      mockClock,
+		pi:         mockServo,
+		stats:      mockStatsServer,
+		cfg:        cfg,
+		eventConns: []UDPConnWithTS{nil},
+		lastTick:   time.Now().Add(-time.Minute * 2),
+	}
+	emptyResults := map[netip.Addr]*RunResult{}
+
+	results := map[netip.Addr]*RunResult{
+		netip.MustParseAddr("192.168.0.10"): {
+			Server: netip.MustParseAddr("192.168.0.10"),
+			Measurement: &MeasurementResult{
+				Delay:     299995 * time.Microsecond,
+				S2CDelay:  100,
+				C2SDelay:  110,
+				Offset:    -200002 * time.Microsecond,
+				Timestamp: ts,
+			},
+		},
+	}
+	err = p.initClients()
+	require.NoError(t, err)
+	_ = p.processResults(emptyResults)
+	require.True(t, p.isStalled)
+	p.lastTick = time.Now().Add(-time.Second)
+	// we step here
+	_ = p.processResults(results)
+	require.Equal(t, netip.MustParseAddr("192.168.0.10"), p.bestGM)
+	require.Nil(t, nil, results[netip.MustParseAddr("192.168.0.10")])
+	require.False(t, p.isStalled)
 }
 
 func TestRunListenerErr(t *testing.T) {
@@ -453,6 +521,7 @@ func TestRunListenerErr(t *testing.T) {
 		pi:    mockServo,
 		stats: mockStatsServer,
 		cfg: &Config{
+			Iface:    "lo",
 			Interval: time.Second,
 			Servers: map[string]int{
 				"192.168.0.10": 1,
@@ -486,6 +555,7 @@ func TestRunListenerError(t *testing.T) {
 		pi:    mockServo,
 		stats: mockStatsServer,
 		cfg: &Config{
+			Iface:    "lo",
 			Interval: time.Second,
 			Servers: map[string]int{
 				"192.168.0.10": 1,
@@ -565,6 +635,7 @@ func TestRunListenerGood(t *testing.T) {
 		pi:    mockServo,
 		stats: mockStatsServer,
 		cfg: &Config{
+			Iface:    "lo",
 			Interval: time.Second,
 			Servers: map[string]int{
 				"192.168.0.10": 1,
@@ -613,7 +684,7 @@ func TestPTPing(t *testing.T) {
 		clock:      mockClock,
 		pi:         mockServo,
 		stats:      mockStatsServer,
-		cfg:        &Config{},
+		cfg:        &Config{Iface: "lo"},
 		eventConns: []UDPConnWithTS{mockEventConn},
 	}
 

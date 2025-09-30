@@ -124,7 +124,7 @@ func TestListener(t *testing.T) {
 			ExpectedListeners: 1,
 			ExpectedWorkers:   0,
 		},
-		Config: Config{Workers: 42, TimestampType: timestamp.SW},
+		Config: Config{Workers: 42, TimestampType: timestamp.SW, Iface: "lo"},
 	}
 	conn := tryListenUDP(t)
 	defer conn.Close()
@@ -172,10 +172,10 @@ func TestServer(t *testing.T) {
 		},
 		Stats:  &stats.JSONStats{},
 		tasks:  make(chan task, workers),
-		Config: Config{Workers: workers, TimestampType: timestamp.SW},
+		Config: Config{Workers: workers, TimestampType: timestamp.SW, Iface: "lo"},
 	}
 	// create workers
-	for i := 0; i < workers; i++ {
+	for range workers {
 		go s.startWorker()
 	}
 	conn := tryListenUDP(t)
@@ -194,7 +194,7 @@ func TestServer(t *testing.T) {
 	require.Nil(t, err)
 	defer sendConn.Close()
 	// send requests to server, check if response makes sense
-	for i := 0; i < requests; i++ {
+	for range requests {
 		clientTransmitTime := time.Now()
 		sec, frac := ntp.Time(clientTransmitTime)
 
@@ -217,7 +217,7 @@ func TestServer(t *testing.T) {
 }
 
 func Benchmark_generateResponse(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		request := &ntp.Packet{}
 		response := &ntp.Packet{}
 		generateResponse(ts, ts, request, response)
@@ -226,7 +226,7 @@ func Benchmark_generateResponse(b *testing.B) {
 
 func Benchmark_fillStaticHeaders(b *testing.B) {
 	s := &Server{}
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		response := &ntp.Packet{}
 		s.fillStaticHeaders(response)
 	}

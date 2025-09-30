@@ -63,6 +63,7 @@ type SPTP struct {
 	priorities map[netip.Addr]int
 	backoff    map[netip.Addr]*backoff
 	lastTick   time.Time
+	isStalled  bool
 
 	clockID ptp.ClockIdentity
 	genConn UDPConnNoTS
@@ -88,6 +89,10 @@ func NewSPTP(cfg *Config, stats StatsServer) (*SPTP, error) {
 }
 
 func (p *SPTP) initClients() error {
+	iface, err := net.InterfaceByName(p.cfg.Iface)
+	if err != nil {
+		return err
+	}
 	p.clients = map[netip.Addr]*Client{}
 	p.priorities = map[netip.Addr]int{}
 	p.backoff = map[netip.Addr]*backoff{}
@@ -102,7 +107,7 @@ func (p *SPTP) initClients() error {
 		}
 		var econn UDPConnWithTS
 		if p.cfg.ParallelTX {
-			econn, err = NewUDPConnTS(net.ParseIP(p.cfg.ListenAddress), ptp.PortEvent, p.cfg.Timestamping, p.cfg.Iface, p.cfg.DSCP)
+			econn, err = NewUDPConnTS(net.ParseIP(p.cfg.ListenAddress), ptp.PortEvent, p.cfg.Timestamping, iface, p.cfg.DSCP)
 			if err != nil {
 				return err
 			}
@@ -141,7 +146,7 @@ func (p *SPTP) init() error {
 
 	if !p.cfg.ParallelTX {
 		// bind to event port
-		eventConn, err := NewUDPConnTS(net.ParseIP(p.cfg.ListenAddress), ptp.PortEvent, p.cfg.Timestamping, p.cfg.Iface, p.cfg.DSCP)
+		eventConn, err := NewUDPConnTS(net.ParseIP(p.cfg.ListenAddress), ptp.PortEvent, p.cfg.Timestamping, iface, p.cfg.DSCP)
 		if err != nil {
 			return fmt.Errorf("binding to %d: %w", ptp.PortEvent, err)
 		}
@@ -233,6 +238,7 @@ func (p *SPTP) RunListener(ctx context.Context) error {
 					doneChan <- fmt.Errorf("received packet on port 320 with nil source address")
 					return
 				}
+				addr = addr.Unmap()
 				log.Debugf("got packet on port 320, n = %v, addr = %v", bbuf, addr)
 				cc, found := p.clients[addr]
 				if !found {
@@ -275,8 +281,8 @@ func (p *SPTP) RunListener(ctx context.Context) error {
 						doneChan <- err
 						return
 					}
-					log.Debugf("got packet on port 319, addr = %v", addr)
 					ip := timestamp.SockaddrToAddr(addr)
+					log.Debugf("got packet on port 319, addr = %v", ip)
 					cc, found := p.clients[ip]
 					if !found {
 						log.Warningf("ignoring packets from server %v. Trying ptping", ip)
@@ -321,13 +327,14 @@ func (p *SPTP) handleExchangeError(addr netip.Addr, err error, tickDuration time
 	}
 }
 
-func (p *SPTP) setMeanFreq() float64 {
+func (p *SPTP) setMeanFreq() (float64, error) {
 	freqAdj := p.pi.MeanFreq()
 	p.pi.SetLastFreq(freqAdj)
 	if err := p.clock.AdjFreqPPB(-1 * freqAdj); err != nil {
 		log.Errorf("failed to adjust freq to %v: %v", -freqAdj, err)
+		return freqAdj, err
 	}
-	return freqAdj
+	return freqAdj, nil
 }
 
 // reprioritize is pushing former "best gm" to the back of the list
@@ -343,7 +350,7 @@ func (p *SPTP) reprioritize(bestAddr netip.Addr) {
 	}
 }
 
-func (p *SPTP) processResults(results map[netip.Addr]*RunResult) {
+func (p *SPTP) processResults(results map[netip.Addr]*RunResult) error {
 	defer func() {
 		for addr, res := range results {
 			s := runResultToGMStats(addr, res, p.priorities[addr], addr == p.bestGM)
@@ -359,7 +366,10 @@ func (p *SPTP) processResults(results map[netip.Addr]*RunResult) {
 		log.Debugf("tick took %vms sys time", tickDuration.Milliseconds())
 		// +-10% of interval
 		p.stats.SetTickDuration(tickDuration)
-		if 100*tickDuration > 110*p.cfg.Interval || 100*tickDuration < 90*p.cfg.Interval {
+		if tickDuration.Seconds() > 60 {
+			log.Warningf("tick took %vs, the app seems to be stalled", tickDuration.Seconds())
+			p.isStalled = true
+		} else if 100*tickDuration > 110*p.cfg.Interval || 100*tickDuration < 90*p.cfg.Interval {
 			log.Warningf("tick took %vms, which is outside of expected +-10%% from the interval %vms", tickDuration.Milliseconds(), p.cfg.Interval.Milliseconds())
 			isBadTick = true
 		}
@@ -398,9 +408,9 @@ func (p *SPTP) processResults(results map[netip.Addr]*RunResult) {
 	if best == nil {
 		log.Warning("no Best Master selected")
 		p.bestGM = netip.Addr{}
-		freqAdj := p.setMeanFreq()
+		freqAdj, err := p.setMeanFreq()
 		log.Infof("offset Unknown s%d freq %+7.0f path delay Unknown", servo.StateHoldover, -freqAdj)
-		return
+		return err
 	}
 	bestAddr := idsToClients[best.GrandmasterIdentity]
 	bm := results[bestAddr].Measurement
@@ -414,11 +424,31 @@ func (p *SPTP) processResults(results map[netip.Addr]*RunResult) {
 	log.Debugf("best master %q (%s)", bestAddr, bm.Announce.GrandmasterIdentity)
 	isSpike := p.pi.IsSpike(bmOffset)
 
+	if isSpike && bm.Offset < -77*time.Hour {
+		// mitigate Broadcom 48bit overflow
+		p.isStalled = true
+	}
 	var state servo.State
 	var freqAdj float64
-	if isSpike {
+	if p.isStalled {
+		var err error
+		if freqAdj, err = p.setMeanFreq(); err != nil {
+			return err
+		}
+		// if we are in the stalled state, we can step the clock, but only once
+		p.isStalled = false
+		// if calculated offset is far away from the range - step it after stall
+		if isSpike {
+			state = servo.StateJump
+		} else {
+			state = servo.StateHoldover
+		}
+	} else if isSpike {
 		p.stats.IncFiltered()
-		freqAdj = p.setMeanFreq()
+		var err error
+		if freqAdj, err = p.setMeanFreq(); err != nil {
+			return err
+		}
 		if p.pi.GetState() == servo.StateLocked {
 			state = servo.StateFilter
 		} else {
@@ -426,7 +456,10 @@ func (p *SPTP) processResults(results map[netip.Addr]*RunResult) {
 		}
 		results[bestAddr].Measurement = nil
 	} else if isBadTick {
-		freqAdj = p.setMeanFreq()
+		var err error
+		if freqAdj, err = p.setMeanFreq(); err != nil {
+			return err
+		}
 		state = servo.StateHoldover
 	} else {
 		freqAdj, state = p.pi.Sample(bmOffset, uint64(bm.Timestamp.UnixNano()))
@@ -438,10 +471,12 @@ func (p *SPTP) processResults(results map[netip.Addr]*RunResult) {
 		log.Infof("stepping clock by %v", -bm.Offset)
 		if err := p.clock.Step(-bm.Offset); err != nil {
 			log.Errorf("failed to step freq by %v: %v", -bm.Offset, err)
+			return err
 		}
 	case servo.StateLocked:
 		if err := p.clock.AdjFreqPPB(-freqAdj); err != nil {
 			log.Errorf("failed to adjust freq to %v: %v", -freqAdj, err)
+			return err
 		}
 		if err := p.clock.SetSync(); err != nil {
 			log.Error("failed to set clock sync state")
@@ -460,13 +495,14 @@ func (p *SPTP) processResults(results map[netip.Addr]*RunResult) {
 			p.stats.IncPortChangeCount(portChangeCount)
 		}
 	}
+	return nil
 }
 
 func (p *SPTP) runInternal(ctx context.Context) error {
 	p.pi.SyncInterval(p.cfg.Interval.Seconds())
 	var lock sync.Mutex
 
-	tick := func() {
+	tick := func() error {
 		eg, ictx := errgroup.WithContext(ctx)
 		results := map[netip.Addr]*RunResult{}
 		for addr, c := range p.clients {
@@ -494,7 +530,7 @@ func (p *SPTP) runInternal(ctx context.Context) error {
 		if err != nil {
 			log.Errorf("run failed: %v", err)
 		}
-		p.processResults(results)
+		return p.processResults(results)
 	}
 
 	timer := time.NewTimer(0)
@@ -510,7 +546,9 @@ func (p *SPTP) runInternal(ctx context.Context) error {
 			return ctx.Err()
 		case <-timer.C:
 			timer.Reset(p.cfg.Interval)
-			tick()
+			if err := tick(); err != nil {
+				return fmt.Errorf("got unrecoverable error %w", err)
+			}
 		}
 	}
 }

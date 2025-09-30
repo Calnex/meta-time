@@ -17,6 +17,7 @@ limitations under the License.
 package stats
 
 import (
+	"slices"
 	"testing"
 
 	ptp "github.com/facebook/time/ptp/protocol"
@@ -34,14 +35,10 @@ func TestSyncMapInt64Keys(t *testing.T) {
 
 	found := 0
 	for _, k := range s.keys() {
-		for _, i := range expected {
-			if i == k {
-				found++
-				break
-			}
+		if slices.Contains(expected, k) {
+			found++
 		}
 	}
-
 	require.Equal(t, len(expected), found)
 }
 
@@ -77,6 +74,8 @@ func TestSyncMapInt64Counters(t *testing.T) {
 	c.clockclass = 1
 	c.drain = 1
 	c.reload = 1
+	c.txtsMissing = 5
+	c.minMaxCF = 6969
 
 	require.Equal(t, int64(1), c.subscriptions.load(1))
 	require.Equal(t, int64(1), c.rx.load(1))
@@ -91,6 +90,8 @@ func TestSyncMapInt64Counters(t *testing.T) {
 	require.Equal(t, int64(1), c.clockclass)
 	require.Equal(t, int64(1), c.drain)
 	require.Equal(t, int64(1), c.reload)
+	require.Equal(t, int64(5), c.txtsMissing)
+	require.Equal(t, int64(6969), c.minMaxCF)
 
 	c.reset()
 
@@ -107,6 +108,8 @@ func TestSyncMapInt64Counters(t *testing.T) {
 	require.Equal(t, int64(0), c.clockclass)
 	require.Equal(t, int64(0), c.drain)
 	require.Equal(t, int64(0), c.reload)
+	require.Equal(t, int64(0), c.txtsMissing)
+	require.Equal(t, int64(0), c.minMaxCF)
 }
 
 func TestCountersToMap(t *testing.T) {
@@ -122,6 +125,8 @@ func TestCountersToMap(t *testing.T) {
 	c.clockclass = 6
 	c.drain = 1
 	c.reload = 2
+	c.txtsMissing = 5
+	c.minMaxCF = 6969
 
 	result := c.toMap()
 
@@ -135,6 +140,8 @@ func TestCountersToMap(t *testing.T) {
 	expectedMap["clockclass"] = 6
 	expectedMap["drain"] = 1
 	expectedMap["reload"] = 2
+	expectedMap["txts.missing"] = 5
+	expectedMap["min_max_cf"] = 6969
 
 	require.Equal(t, expectedMap, result)
 }

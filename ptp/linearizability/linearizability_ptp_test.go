@@ -28,8 +28,9 @@ import (
 	"github.com/facebook/time/fbclock/stats"
 	ptp "github.com/facebook/time/ptp/protocol"
 
-	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 func grantUnicastPkt(seq int, clockID ptp.ClockIdentity, duration time.Duration, what ptp.MessageType) *ptp.Signaling {
@@ -79,13 +80,13 @@ func delayRespPkt(seq int, receiveTimestamp time.Time) *ptp.DelayResp {
 	}
 }
 
-func newTestTester() *PTP4lTester {
-	cfg := &PTP4lTestConfig{
+func newTestTester() *PTPTester {
+	cfg := &PTPTestConfig{
 		Timeout:   500 * time.Millisecond,
 		Server:    "whatever",
 		Interface: "ethblah",
 	}
-	lt := &PTP4lTester{
+	lt := &PTPTester{
 		inChan: make(chan *inPacket, 10),
 		cfg:    cfg,
 		sendTS: make(map[uint16]time.Time),
@@ -137,12 +138,12 @@ func TestLinearizabilityTestRunTest(t *testing.T) {
 				}
 				return 20, nil
 			default:
-				t.Errorf("got unexpected grant for %s", msgType)
+				assert.Fail(t, fmt.Sprintf("got unexpected grant for %s", msgType))
 			}
 		case *ptp.CancelUnicastTransmissionTLV:
 			return 0, nil
 		default:
-			t.Errorf("got unsupported TLV type %s(%d)", tlv.Type(), tlv.Type())
+			assert.Fail(t, fmt.Sprintf("got unsupported TLV type %s(%d)", tlv.Type(), tlv.Type()))
 		}
 		return 10, nil
 	})
@@ -175,7 +176,7 @@ func TestLinearizabilityTestRunTest(t *testing.T) {
 	// this will run 'runSingleTest' without subscription request,
 	// then retry with subscription request after no response is received
 	result := lt.RunTest(ctx)
-	want := PTP4lTestResult{
+	want := PTPTestResult{
 		Server:      lt.cfg.Server,
 		Error:       nil,
 		TXTimestamp: txTime,
@@ -210,7 +211,7 @@ func TestLinearizabilityTestRunTestTimeout(t *testing.T) {
 	// then retry with subscription request after no response is received
 	result := lt.RunTest(ctx)
 	require.ErrorIs(t, result.Err(), context.DeadlineExceeded)
-	want := PTP4lTestResult{
+	want := PTPTestResult{
 		Server:      lt.cfg.Server,
 		Error:       context.DeadlineExceeded,
 		TXTimestamp: time.Time{},
@@ -254,12 +255,12 @@ func TestLinearizabilityTestRunSingleTest(t *testing.T) {
 				}
 				return 20, nil
 			default:
-				t.Errorf("got unexpected grant for %s", msgType)
+				assert.Fail(t, fmt.Sprintf("got unexpected grant for %s", msgType))
 			}
 		case *ptp.CancelUnicastTransmissionTLV:
 			return 0, nil
 		default:
-			t.Errorf("got unsupported TLV type %s(%d)", tlv.Type(), tlv.Type())
+			assert.Fail(t, fmt.Sprintf("got unsupported TLV type %s(%d)", tlv.Type(), tlv.Type()))
 		}
 		return 10, nil
 	})
@@ -286,7 +287,7 @@ func TestLinearizabilityTestRunSingleTest(t *testing.T) {
 	defer cancel()
 	err := lt.runSingleTest(ctx, time.Second)
 	require.NoError(t, err)
-	want := &PTP4lTestResult{
+	want := &PTPTestResult{
 		Server:      lt.cfg.Server,
 		Error:       nil,
 		TXTimestamp: txTime,
@@ -300,7 +301,7 @@ func TestLinearizabilityTestRunSingleTestSPTP(t *testing.T) {
 	defer ctrl.Finish()
 	lt := newTestTester()
 	lt.listenerRunning = true
-	lt.sptp = true
+	lt.proto = SPTP
 	txTime := time.Unix(0, 1653574589806120900)
 	rxTime := time.Unix(0, 1653574589806121900)
 	genConn := NewMockUDPConn(ctrl)
@@ -327,7 +328,7 @@ func TestLinearizabilityTestRunSingleTestSPTP(t *testing.T) {
 	defer cancel()
 	err := lt.runSingleTest(ctx, 0)
 	require.NoError(t, err)
-	want := &PTP4lTestResult{
+	want := &PTPTestResult{
 		Server:      lt.cfg.Server,
 		Error:       nil,
 		TXTimestamp: txTime,
@@ -369,12 +370,12 @@ func TestLinearizabilityTestRunSingleTestError(t *testing.T) {
 				}
 				return 20, nil
 			default:
-				t.Errorf("got unexpected grant for %s", msgType)
+				assert.Fail(t, fmt.Sprintf("got unexpected grant for %s", msgType))
 			}
 		case *ptp.CancelUnicastTransmissionTLV:
 			return 0, nil
 		default:
-			t.Errorf("got unsupported TLV type %s(%d)", tlv.Type(), tlv.Type())
+			assert.Fail(t, fmt.Sprintf("got unsupported TLV type %s(%d)", tlv.Type(), tlv.Type()))
 		}
 		return 10, nil
 	})
@@ -420,7 +421,7 @@ func TestLinearizabilityTestRunSingleTestNoSub(t *testing.T) {
 	err := lt.runSingleTest(ctx, 0)
 	require.NoError(t, err)
 
-	want := &PTP4lTestResult{
+	want := &PTPTestResult{
 		Server:      lt.cfg.Server,
 		Error:       nil,
 		TXTimestamp: txTime,
@@ -470,13 +471,13 @@ func TestLinearizabilityTestRunSingleTestTimeoutNoSub(t *testing.T) {
 func TestTestResultGood(t *testing.T) {
 	testCases := []struct {
 		name    string
-		in      PTP4lTestResult
+		in      PTPTestResult
 		want    bool
 		wantErr bool
 	}{
 		{
 			name: "error",
-			in: PTP4lTestResult{
+			in: PTPTestResult{
 				Server:      "time01",
 				RXTimestamp: time.Time{},
 				TXTimestamp: time.Time{},
@@ -487,7 +488,7 @@ func TestTestResultGood(t *testing.T) {
 		},
 		{
 			name: "fail",
-			in: PTP4lTestResult{
+			in: PTPTestResult{
 				Server:      "time01",
 				RXTimestamp: time.Unix(0, 1647359186979431900),
 				TXTimestamp: time.Unix(0, 1647359186979432900),
@@ -498,7 +499,7 @@ func TestTestResultGood(t *testing.T) {
 		},
 		{
 			name: "pass",
-			in: PTP4lTestResult{
+			in: PTPTestResult{
 				Server:      "time01",
 				RXTimestamp: time.Unix(0, 1647359186979432900),
 				TXTimestamp: time.Unix(0, 1647359186979431900),
@@ -524,12 +525,12 @@ func TestTestResultGood(t *testing.T) {
 func TestTestResultExplain(t *testing.T) {
 	testCases := []struct {
 		name string
-		in   PTP4lTestResult
+		in   PTPTestResult
 		want string
 	}{
 		{
 			name: "error",
-			in: PTP4lTestResult{
+			in: PTPTestResult{
 				Server:      "time01",
 				RXTimestamp: time.Time{},
 				TXTimestamp: time.Time{},
@@ -539,7 +540,7 @@ func TestTestResultExplain(t *testing.T) {
 		},
 		{
 			name: "fail",
-			in: PTP4lTestResult{
+			in: PTPTestResult{
 				Server:      "time01",
 				RXTimestamp: time.Unix(0, 1647359186979431900),
 				TXTimestamp: time.Unix(0, 1647359186979432900),
@@ -549,7 +550,7 @@ func TestTestResultExplain(t *testing.T) {
 		},
 		{
 			name: "pass",
-			in: PTP4lTestResult{
+			in: PTPTestResult{
 				Server:      "time01",
 				RXTimestamp: time.Unix(0, 1647359186979432900),
 				TXTimestamp: time.Unix(0, 1647359186979431900),
@@ -569,31 +570,31 @@ func TestTestResultExplain(t *testing.T) {
 func TestProcessMonitoringResults(t *testing.T) {
 	s := stats.NewStats()
 	results := map[string]TestResult{
-		"server01.nha1": PTP4lTestResult{ // tests pass - TX before RX
+		"server01.nha1": PTPTestResult{ // tests pass - TX before RX
 			Server:      "192.168.0.10",
 			Error:       nil,
 			TXTimestamp: time.Unix(0, 1653574589806127700),
 			RXTimestamp: time.Unix(0, 1653574589806127800),
 		},
-		"server02.nha1": PTP4lTestResult{ // tests failed - TX after RX
+		"server02.nha1": PTPTestResult{ // tests failed - TX after RX
 			Server:      "192.168.0.11",
 			Error:       nil,
 			TXTimestamp: time.Unix(0, 1653574589806127730),
 			RXTimestamp: time.Unix(0, 1653574589806127600),
 		},
-		"server03.nha1": PTP4lTestResult{ // drained server
+		"server03.nha1": PTPTestResult{ // drained server
 			Server:      "192.168.0.12",
 			Error:       ErrGrantDenied,
 			TXTimestamp: time.Time{},
 			RXTimestamp: time.Time{},
 		},
-		"server04.nha1": PTP4lTestResult{ // tests pass - TX before RX
+		"server04.nha1": PTPTestResult{ // tests pass - TX before RX
 			Server:      "192.168.0.13",
 			Error:       nil,
 			TXTimestamp: time.Unix(0, 1653574589806127900),
 			RXTimestamp: time.Unix(0, 1653574589806127930),
 		},
-		"server05.nha1": PTP4lTestResult{ // failing server
+		"server05.nha1": PTPTestResult{ // failing server
 			Server:      "192.168.0.14",
 			Error:       fmt.Errorf("ooops"),
 			TXTimestamp: time.Time{},
@@ -611,11 +612,11 @@ func TestProcessMonitoringResults(t *testing.T) {
 
 func TestProcessTimestamp(t *testing.T) {
 	server := "test_server"
-	cfg := &PTP4lTestConfig{
+	cfg := &PTPTestConfig{
 		Server: server,
 	}
-	// Create a PTP4lTester instance
-	tester := &PTP4lTester{
+	// Create a PTPTester instance
+	tester := &PTPTester{
 		cfg:    cfg,
 		sendTS: make(map[uint16]time.Time),
 	}
@@ -628,7 +629,7 @@ func TestProcessTimestamp(t *testing.T) {
 		rxTimestamp    time.Time
 		setupSendTS    func()
 		expectedError  error
-		expectedResult PTP4lTestResult
+		expectedResult PTPTestResult
 		expectedState  state
 	}{
 		{
@@ -640,7 +641,7 @@ func TestProcessTimestamp(t *testing.T) {
 			},
 			expectedError: nil,
 			expectedState: stateDone,
-			expectedResult: PTP4lTestResult{
+			expectedResult: PTPTestResult{
 				Server:      "test_server",
 				RXTimestamp: now,
 				TXTimestamp: oneSecAgo,

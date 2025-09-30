@@ -25,6 +25,9 @@ import (
 	"github.com/facebook/time/phc/unix" // a temporary shim for "golang.org/x/sys/unix" until v0.27.0 is cut
 )
 
+// isClockMonoRawSupported is a global variable to keep information whether clockid is supported in PTPSysOffsetExtended
+var isClockMonoRawSupported = true
+
 // Device represents a PHC device
 type Device os.File
 
@@ -56,10 +59,16 @@ func (dev *Device) ReadSysoffExtended() (*PTPSysOffsetExtended, error) {
 	return dev.readSysoffExtended(ExtendedNumProbes)
 }
 
-// ReadSysoffExtended1 reads the precise time from the PHC along with SYS time to measure the call delay.
+// ReadSysoffExtended1 reads the precise time from the PHC along with MONOTONIC_RAW SYS time to measure the call delay.
 // The samples parameter is set to 1.
 func (dev *Device) ReadSysoffExtended1() (*PTPSysOffsetExtended, error) {
 	return dev.readSysoffExtended(1)
+}
+
+// ReadSysoffExtendedRealTimeClock1 reads the precise time from the PHC along with REAL_TIME_CLOCK SYS time to measure the call delay.
+// The samples parameter is set to 1.
+func (dev *Device) ReadSysoffExtendedRealTimeClock1() (*PTPSysOffsetExtended, error) {
+	return dev.readSysoffExtendedClockID(1, unix.CLOCK_REALTIME)
 }
 
 // ReadSysoffPrecise reads the precise time from the PHC along with SYS time to measure the call delay.
@@ -68,7 +77,18 @@ func (dev *Device) ReadSysoffPrecise() (*PTPSysOffsetPrecise, error) {
 }
 
 func (dev *Device) readSysoffExtended(samples uint) (*PTPSysOffsetExtended, error) {
-	value, err := unix.IoctlPtpSysOffsetExtended(int(dev.Fd()), samples)
+	if isClockMonoRawSupported {
+		value, err := dev.readSysoffExtendedClockID(samples, unix.CLOCK_MONOTONIC_RAW)
+		if err == nil {
+			return value, nil
+		}
+		isClockMonoRawSupported = false
+	}
+	return dev.readSysoffExtendedClockID(samples, unix.CLOCK_REALTIME)
+}
+
+func (dev *Device) readSysoffExtendedClockID(samples uint, clockid uint32) (*PTPSysOffsetExtended, error) {
+	value, err := unix.IoctlPtpSysOffsetExtendedClock(int(dev.Fd()), clockid, samples)
 	if err != nil {
 		return nil, err
 	}

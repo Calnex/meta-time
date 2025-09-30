@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/facebook/time/hostendian"
-
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 )
@@ -207,7 +206,7 @@ func TestEnableTimestamps(t *testing.T) {
 
 	// SOFTWARE
 	// Allow reading of kernel timestamps via socket
-	err = EnableTimestamps(SW, connFd, "lo")
+	err = EnableTimestamps(SW, connFd, &net.Interface{Name: "lo", Index: 1})
 	require.NoError(t, err)
 
 	// Check that socket option is set
@@ -219,7 +218,7 @@ func TestEnableTimestamps(t *testing.T) {
 
 	// SOFTWARE_RX
 	// Allow reading of kernel timestamps via socket
-	err = EnableTimestamps(SWRX, connFd, "lo")
+	err = EnableTimestamps(SWRX, connFd, &net.Interface{Name: "lo", Index: 1})
 	require.NoError(t, err)
 
 	// Check that socket option is set
@@ -230,7 +229,7 @@ func TestEnableTimestamps(t *testing.T) {
 	require.Greater(t, timestampsEnabled+newTimestampsEnabled, 0, "None of the socket options is set")
 
 	// Unsupported
-	err = EnableTimestamps(42, connFd, "lo")
+	err = EnableTimestamps(42, connFd, &net.Interface{Name: "lo", Index: 1})
 	require.Equal(t, fmt.Errorf("Unrecognized timestamp type: Unsupported"), err)
 }
 
@@ -240,20 +239,38 @@ func TestSocketControlMessageTimestamp(t *testing.T) {
 	}
 
 	var b []byte
+	var toob int
 
 	// unix.Cmsghdr used in socketControlMessageTimestamp differs depending on platform
 	switch runtime.GOARCH {
 	case "amd64":
-		b = []byte{60, 0, 0, 0, 0, 0, 0, 0, 41, 0, 0, 0, 25, 0, 0, 0, 42, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 64, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 230, 180, 10, 97, 0, 0, 0, 0, 239, 83, 199, 39, 0, 0, 0, 0}
-	case "386":
-		b = []byte{56, 0, 0, 0, 41, 0, 0, 0, 25, 0, 0, 0, 42, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 60, 0, 0, 0, 1, 0, 0, 0, 65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 230, 180, 10, 97, 0, 0, 0, 0, 239, 83, 199, 39, 0, 0, 0, 0}
+		b = []byte{
+			0x40, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+			0x1, 0x0, 0x0, 0x0, 0x41, 0x0, 0x0, 0x0,
+			0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+			0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+			0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+			0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+			0x79, 0xab, 0x24, 0x68, 0x0, 0x0, 0x0,
+			0x0, 0xfc, 0xab, 0xf9, 0x8, 0x0, 0x0,
+			0x0, 0x0, 0x3c, 0x0, 0x0, 0x0, 0x0, 0x0,
+			0x0, 0x0, 0x29, 0x0, 0x0, 0x0, 0x19, 0x0,
+			0x0, 0x0, 0x2a, 0x0, 0x0, 0x0, 0x4, 0x0,
+			0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0,
+			0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+			0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+			0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+			0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+			0x0, 0x0,
+		}
+		toob = len(b)
 	default:
-		t.Skip("This test supports amd64/386 platforms only")
+		t.Skip("This test checks amd64 platform only")
 	}
 
-	ts, err := socketControlMessageTimestamp(b)
+	ts, err := socketControlMessageTimestamp(b, toob)
 	require.NoError(t, err)
-	require.Equal(t, int64(1628091622667374575), ts.UnixNano())
+	require.Equal(t, int64(1747233657150580220), ts.UnixNano())
 }
 
 func TestSocketControlMessageTimestampFail(t *testing.T) {
@@ -261,7 +278,7 @@ func TestSocketControlMessageTimestampFail(t *testing.T) {
 		t.Skip("This test supports SO_TIMESTAMPING_NEW only. No sample of SO_TIMESTAMPING")
 	}
 
-	_, err := socketControlMessageTimestamp(make([]byte, 16))
+	_, err := socketControlMessageTimestamp(make([]byte, 16), 16)
 	require.ErrorIs(t, errNoTimestamp, err)
 }
 
@@ -356,4 +373,88 @@ func TestReadHWTimestampCaps(t *testing.T) {
 	// hw timestamps are disabled for lo
 	require.Equal(t, int32(0), txType)
 	require.Equal(t, int32(0), rxFilters)
+}
+
+func TestScmDataToSeqID(t *testing.T) {
+	// 0x2a is ENOMSG - see /usr/include/asm-generic/errno.h
+	hwData := []byte{
+		0x2a, 0x0, 0x0, 0x0, 0x4, 0x0, 0x0, 0x0,
+		0x0, 0x0, 0x0, 0x0, 0xd2, 0x4, 0x0, 0x0,
+	}
+	seqID, err := scmDataToSeqID(hwData)
+	require.NoError(t, err)
+	require.Equal(t, uint32(1234), seqID)
+}
+
+func TestScmDataToSeqIDErrornoNotENOMSG(t *testing.T) {
+	// 0x26 is ENOSYS - see /usr/include/asm-generic/errno.h
+	hwData := []byte{
+		0x26, 0x0, 0x0, 0x0, 0x4, 0x0, 0x0, 0x0,
+		0x0, 0x0, 0x0, 0x0, 0xd2, 0x4, 0x0, 0x0,
+	}
+	_, err := scmDataToSeqID(hwData)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "Expected ENOMSG but got function not implemented")
+}
+
+func TestSeqIDSocketControlMessage(t *testing.T) {
+	soob := make([]byte, unix.CmsgSpace(SizeofSeqID))
+	seqID := uint32(8765)
+	var sockControlMsg []byte
+	SeqIDSocketControlMessage(seqID, soob)
+
+	switch runtime.GOARCH {
+	case "amd64":
+		// Socket Control Message with 20 byte length (0x14), level SOL_SOCKET (0x1)
+		// and type SCM_TS_OPT_ID (0x51) and a 4 byte payload (0x3d, 0x22, 0x0, 0x0)
+		sockControlMsg = []byte{
+			0x14, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+			0x1, 0x0, 0x0, 0x0, 0x51, 0x0, 0x0, 0x0,
+			0x3d, 0x22, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, // 4 bytes of padding at the end
+		}
+	case "386":
+		// Socket Control Message with 16 byte length (0x10), level SOL_SOCKET (0x1)
+		// and type SCM_TS_OPT_ID (0x51) and a 4 byte payload (0x3d, 0x22, 0x0, 0x0)
+		sockControlMsg = []byte{
+			0x10, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0,
+			0x51, 0x0, 0x0, 0x0, 0x3d, 0x22, 0x0, 0x0,
+		}
+	default:
+		t.Skip("This test supports 386/amd64 platform only")
+	}
+	require.Equal(t, sockControlMsg, soob)
+}
+
+func TestSocketControlMessageSeqIDTimestamp(t *testing.T) {
+	tboob := 128
+	seqID := uint32(3248)
+	// byte array of 2 socket control messages: First message includes a timestamp and the second
+	// message includes the sequence ID of a Sync packet
+	// cmsghdr struct comprises len (8 bytes), level (4 bytes), type (4 bytes) and data (length can vary)
+	switch runtime.GOARCH {
+	case "amd64":
+		sockControlMsgs := []byte{
+			0x40, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, // message has len of 64 bytes (0x40), level SOL_SOCKET (0x1), type SO_TIMESTAMPING_NEW (0x41)
+			0x1, 0x0, 0x0, 0x0, 0x41, 0x0, 0x0, 0x0,
+			0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+			0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+			0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+			0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+			0x69, 0x75, 0x23, 0x68, 0x0, 0x0, 0x0, 0x0,
+			0x7b, 0xcb, 0x4, 0x6, 0x0, 0x0, 0x0, 0x0,
+			0x3c, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, // message has len of 60 bytes (0x3c) level SOL_IPV6 (0x29) and type IPV6_RECVERR (0x19)
+			0x29, 0x0, 0x0, 0x0, 0x19, 0x0, 0x0, 0x0,
+			0x2a, 0x0, 0x0, 0x0, 0x4, 0x0, 0x0, 0x0, // sock_extended_err with errno ENOMSG (0x2a) and data field of 4 bytes (0x4) which is the Sequence ID of 3248 (0xb0, 0x0c, 0x0, 0x0)
+			0x0, 0x0, 0x0, 0x0, 0xb0, 0x0c, 0x0, 0x0,
+			0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+			0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+			0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+			0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, // Last 4 bytes are there to align the socket message to an 8-byte boundary
+		}
+		ts, err := socketControlMessageSeqIDTimestamp(sockControlMsgs, tboob, seqID)
+		require.NoError(t, err)
+		require.Equal(t, int64(1747154281100977531), ts.UnixNano())
+	default:
+		t.Skip("This test supports amd64 platform only")
+	}
 }

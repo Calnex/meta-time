@@ -24,46 +24,46 @@ import (
 	"github.com/facebook/time/calnex/api"
 )
 
-// PSU check
-type PSU struct {
+// RB is rubidium clock check
+type RB struct {
 	Remediation Remediation
 }
 
 // Name returns the name of the check
-func (p *PSU) Name() string {
-	return "PSU"
+func (p *RB) Name() string {
+	return "Rubidium clock"
 }
 
 // Run executes the check
-func (p *PSU) Run(target string, insecureTLS bool) error {
+func (p *RB) Run(target string, insecureTLS bool) error {
 	api := api.NewAPI(target, insecureTLS, 10*time.Second)
 
-	pu, err := api.PowerSupplyStatus()
+	rb, err := api.RBStatus()
 	if err != nil {
 		return err
 	}
 
-	if !pu.PowerSupplyGood {
-		for i, psu := range pu.Supplies {
-			if !psu.StatusGood {
-				return fmt.Errorf("psu: failed power supply #%d: %s", i, psu.Name)
-			}
-		}
-		return fmt.Errorf("psu: failed power supply")
+	if rb.RBState == 5 {
+		// RBState 5 is "Disciplining"
+		return nil
 	}
 
-	return nil
+	if rb.RBState == 7 {
+		// RBState 7 is "Hold-over (Weak GNSS)"
+		return nil
+	}
+	return fmt.Errorf("Rubidium clock state is: %s", rb.RBStateName)
 }
 
 // Remediate the check
-func (p *PSU) Remediate(ctx context.Context) (string, error) {
+func (p *RB) Remediate(ctx context.Context) (string, error) {
 	return p.Remediation.Remediate(ctx)
 }
 
-// PSURemediation is an open source remediation for PSU check
-type PSURemediation struct{}
+// RBRemediation is an open source remediation for RB check
+type RBRemediation struct{}
 
-// Remediate remediates the PSU check failure
-func (a PSURemediation) Remediate(_ context.Context) (string, error) {
-	return "Replace failed PSU", nil
+// Remediate remediates the RB check failure
+func (a RBRemediation) Remediate(_ context.Context) (string, error) {
+	return "Replace failed unit", nil
 }
