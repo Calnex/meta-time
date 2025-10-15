@@ -86,74 +86,88 @@ func (c *config) measureConfig(target string, s *ini.Section, mc map[api.Channel
 	channelEnabled := make(map[api.Channel]bool)
 
 	for ch, m := range mc {
-		channelEnabled[ch] = true
-		probe := ""
+		// log.Debugf("%s: look at changing channel %s", target,ch)
+		// Check that physical channel (not virtual) is installed before trying to change any settings
+		if c.chGet(s, ch, "installed") == "1" {
+			// log.Debugf("%s: channel %s installed, make changes", target,ch)
 
-		switch m.Probe {
-		case api.ProbeNTP:
-			probe = fmt.Sprintf("%s\\ptp_synce\\mode\\probe_type", ch.CalnexAPI())
+			channelEnabled[ch] = true
+			probe := ""
 
-			c.set(target, s, fmt.Sprintf("%s\\protocol_enabled", ch.CalnexAPI()), api.ON)
-			// Set Virtual Port to use Physical channel 1
-			c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\physical_packet_channel", ch.CalnexAPI()), api.CHANNEL1)
+			switch m.Probe {
+			case api.ProbeNTP:
+				probe = fmt.Sprintf("%s\\ptp_synce\\mode\\probe_type", ch.CalnexAPI())
 
-			// Set target we measure
-			c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\ntp\\server_ip_ipv6", ch.CalnexAPI()), m.Target)
+				c.set(target, s, fmt.Sprintf("%s\\protocol_enabled", ch.CalnexAPI()), api.ON)
+				// Set Virtual Port to use Physical channel 1
+				c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\physical_packet_channel", ch.CalnexAPI()), api.CHANNEL1)
 
-			// show raw metrics
-			c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\ntp\\normalize_delays", ch.CalnexAPI()), api.OFF)
-			// use ipv6
-			c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\ntp\\protocol_level", ch.CalnexAPI()), api.IPV6)
-			// ntp 1 packet per 16 seconds
-			c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\ntp\\poll_log_interval", ch.CalnexAPI()), api.INTERVAL)
-		case api.ProbePTP:
-			probe = fmt.Sprintf("%s\\ptp_synce\\mode\\probe_type", ch.CalnexAPI())
+				// Set target we measure
+				c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\ntp\\server_ip_ipv6", ch.CalnexAPI()), m.Target)
 
-			c.set(target, s, fmt.Sprintf("%s\\protocol_enabled", ch.CalnexAPI()), api.ON)
-			// Set Virtual Port to use Physical channel 1
-			c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\physical_packet_channel", ch.CalnexAPI()), api.CHANNEL1)
+				// show raw metrics
+				c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\ntp\\normalize_delays", ch.CalnexAPI()), api.OFF)
+				// use ipv6
+				c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\ntp\\protocol_level", ch.CalnexAPI()), api.IPV6)
+				// ntp 1 packet per 16 seconds
+				c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\ntp\\poll_log_interval", ch.CalnexAPI()), api.INTERVAL)
+			case api.ProbePTP:
+				probe = fmt.Sprintf("%s\\ptp_synce\\mode\\probe_type", ch.CalnexAPI())
 
-			// Use SPTP instead of PTPv2
-			c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\ptp\\version", ch.CalnexAPI()), api.SPTP)
+				c.set(target, s, fmt.Sprintf("%s\\protocol_enabled", ch.CalnexAPI()), api.ON)
+				// Set Virtual Port to use Physical channel 1
+				c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\physical_packet_channel", ch.CalnexAPI()), api.CHANNEL1)
 
-			// Set target we measure
-			c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\ptp\\master_ip_ipv6", ch.CalnexAPI()), m.Target)
+				// Use SPTP instead of PTPv2
+				c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\ptp\\version", ch.CalnexAPI()), api.SPTP)
 
-			// use ipv6
-			c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\ptp\\protocol_level", ch.CalnexAPI()), api.IPV6)
+				// Set target we measure
+				c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\ptp\\master_ip_ipv6", ch.CalnexAPI()), m.Target)
 
-			// ptp 1 packet per 16 seconds
-			c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\ptp\\log_announce_int", ch.CalnexAPI()), api.INTERVAL)
-			c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\ptp\\log_delay_req_int", ch.CalnexAPI()), api.INTERVAL)
-			c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\ptp\\log_sync_int", ch.CalnexAPI()), api.INTERVAL)
+				// use ipv6
+				c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\ptp\\protocol_level", ch.CalnexAPI()), api.IPV6)
 
-			// ptp unicast mode
-			c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\ptp\\stack_mode", ch.CalnexAPI()), "Unicast")
+				// ptp 1 packet per 16 seconds
+				c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\ptp\\log_announce_int", ch.CalnexAPI()), api.INTERVAL)
+				c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\ptp\\log_delay_req_int", ch.CalnexAPI()), api.INTERVAL)
+				c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\ptp\\log_sync_int", ch.CalnexAPI()), api.INTERVAL)
 
-			// ptp domain
-			c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\ptp\\domain", ch.CalnexAPI()), "0")
-		case api.ProbePPS:
-			probe = fmt.Sprintf("%s\\signal_type", ch.CalnexAPI())
+				// ptp unicast mode
+				c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\ptp\\stack_mode", ch.CalnexAPI()), "Unicast")
 
-			c.set(target, s, fmt.Sprintf("%s\\server_ip", ch.CalnexAPI()), m.Target)
-			c.set(target, s, fmt.Sprintf("%s\\trig_level", ch.CalnexAPI()), "500 mV")
-			c.set(target, s, fmt.Sprintf("%s\\freq", ch.CalnexAPI()), "1 Hz")
-			c.set(target, s, fmt.Sprintf("%s\\suppress_steps", ch.CalnexAPI()), api.YES)
+				// ptp domain
+				c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\ptp\\domain", ch.CalnexAPI()), "0")
+			case api.ProbePPS:
+				probe = fmt.Sprintf("%s\\signal_type", ch.CalnexAPI())
+
+				c.set(target, s, fmt.Sprintf("%s\\server_ip", ch.CalnexAPI()), m.Target)
+				c.set(target, s, fmt.Sprintf("%s\\trig_level", ch.CalnexAPI()), "500 mV")
+				c.set(target, s, fmt.Sprintf("%s\\freq", ch.CalnexAPI()), "1 Hz")
+				c.set(target, s, fmt.Sprintf("%s\\suppress_steps", ch.CalnexAPI()), api.YES)
+			}
+
+			// enable NTP/PTP/PPS channels
+			c.set(target, s, fmt.Sprintf("%s\\used", ch.CalnexAPI()), api.YES)
+			c.set(target, s, probe, m.Probe.CalnexName())
+		} else {
+			log.Debugf("%s: no change to channel %s it is not installed", target, ch)
 		}
-
-		// enable NTP/PTP/PPS channels
-		c.set(target, s, fmt.Sprintf("%s\\used", ch.CalnexAPI()), api.YES)
-		c.set(target, s, probe, m.Probe.CalnexName())
 	}
 
+	// log.Debugf("%s: channel used list %+v", target, channelEnabled)
 	// Disable unused channels
 	for ch, datatype := range api.MeasureChannelDatatypeMap {
-		if !channelEnabled[ch] {
-			c.set(target, s, fmt.Sprintf("%s\\used", ch.CalnexAPI()), api.NO)
-			if datatype == api.TWOWAYTE {
-				c.set(target, s, fmt.Sprintf("%s\\protocol_enabled", ch.CalnexAPI()), api.OFF)
-				c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\mode\\probe_type", ch.CalnexAPI()), api.DISABLED)
+		if c.chGet(s, ch, "installed") == "1" {
+			if !channelEnabled[ch] {
+				// log.Debugf("%s: channel %s not used turn it off", target, ch)
+				c.set(target, s, fmt.Sprintf("%s\\used", ch.CalnexAPI()), api.NO)
+				if datatype == api.TWOWAYTE {
+					c.set(target, s, fmt.Sprintf("%s\\protocol_enabled", ch.CalnexAPI()), api.OFF)
+					c.set(target, s, fmt.Sprintf("%s\\ptp_synce\\mode\\probe_type", ch.CalnexAPI()), api.DISABLED)
+				}
 			}
+		} else {
+			log.Debugf("%s: no change to channel %s it is not installed", target, ch)
 		}
 	}
 }
@@ -203,8 +217,10 @@ func (c *config) baseConfig(target string, measure *ini.Section, gnss *ini.Secti
 
 	// Enable 1st Physical channel
 	c.set(target, measure, fmt.Sprintf("%s\\used", api.ChannelONE.CalnexAPI()), api.YES)
-	// Disable 2nd Physical channel
-	c.set(target, measure, fmt.Sprintf("%s\\used", api.ChannelTWO.CalnexAPI()), api.NO)
+	// Disable 2nd Physical channel only if it is installed
+	if maxChannel == api.ChannelTWO {
+		c.set(target, measure, fmt.Sprintf("%s\\used", api.ChannelTWO.CalnexAPI()), api.NO)
+	}
 
 	// Disable packet measurement on the two physical channel measurements
 	c.chSet(target, measure, api.ChannelONE, maxChannel, "%s\\protocol_enabled", api.OFF)
@@ -245,6 +261,16 @@ func Config(target string, insecureTLS bool, cc *CalnexConfig, apply bool) error
 
 		log.Infof("%s: pushing the config", target)
 		// set the modified config
+
+		// save the config for debugging
+		// var buf bytes.Buffer
+		// if _, err = f.WriteTo(&buf); err != nil {
+		//     return err
+		// }
+		// if err = os.WriteFile(fmt.Sprintf("%s.calnex.conf", target), buf.Bytes(), 0644); err != nil {
+		//     return err
+		// }
+
 		if err = api.PushSettings(f); err != nil {
 			return err
 		}
